@@ -1,0 +1,1 @@
+select column2 from my_table;
