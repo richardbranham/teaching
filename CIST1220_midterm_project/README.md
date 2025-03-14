@@ -9,7 +9,7 @@ This document describes the necessary preparations to student computers for the 
 Unzip midterm project files to your desired working directory.
 
 #### 2. Install Python 3
-It should be installable using the built-in software or package manager on your computer.  If a direct download and install is needed, Python 3 downloads are at this link:
+It should be installable using the built-in software or package manager on your computer.  It is available in Microsoft Store, for example.  If a direct download and install is needed, Python 3 downloads are at this link:
 https://www.python.org/downloads/
 
 - Confirm that there are no errors with the installation.  
