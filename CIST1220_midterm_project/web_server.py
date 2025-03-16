@@ -22,7 +22,7 @@ def run_query(input1, input2):
     c = conn.cursor()
 
     # Execute the query with inputs
-    #result = c.execute(f"SELECT * FROM my_table WHERE column1 = ? AND column2 = ?", (input1, input2)).fetchall()
+    # Your SQL should be saved in midterm.sql, which will be read from the file and executed in the "with" statement below.
     with open('midterm.sql', 'r') as f:
         for sql in f:
             if sql.strip().startswith("#"):
