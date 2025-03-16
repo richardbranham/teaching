@@ -1,5 +1,7 @@
 from flask import Flask, render_template, request
 import sqlite3
+import csv
+import io
 
 import os 
 dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -22,15 +24,19 @@ def run_query(input1, input2):
     # Execute the query with inputs
     #result = c.execute(f"SELECT * FROM my_table WHERE column1 = ? AND column2 = ?", (input1, input2)).fetchall()
     with open('midterm.sql', 'r') as f:
-        sql = f.read()
-    result = c.execute(sql).fetchall()
+        for sql in f:
+            if sql.strip().startswith("#"):
+                print(f"Ignoring comment:  {sql}")
+            else:
+                print(f"Executing SQL:  {sql}")
+                result = c.execute(sql, (input1, input2)).fetchall()
 
     return result
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        # Get form data
+        # Get form data from index.html
         input1 = request.form['input1']
         input2 = request.form['input2']
 
@@ -42,8 +48,33 @@ def index():
     else:
         # Display the form
         return render_template('index.html')
-        #return render_template(f"{cwd}\\index.html")
+
+@app.route('/csv', methods=['GET', 'POST'])
+def csv_export():
+    # Connect to SQLite database
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+
+    with open('midterm.sql', 'r') as f:
+        for sql in f:
+            if sql.strip().startswith("#"):
+                print(f"Ignoring comment:  {sql}")
+            else:
+                print(f"Executing SQL:  {sql}")
+                sql = "select * from my_table"
+                result = c.execute(sql).fetchall()
+
+                csv_output = io.StringIO()
+                csv_writer = csv.writer(csv_output)
+                csv_writer.writerows(result)
+                csv_string = csv_output.getvalue()
+                csv_output.close()
+                conn.close()
+                print(csv_string)
+
+    return csv_string.replace("\n", "<br />")
 
 if __name__ == '__main__':
+    #app.run(debug=True)
     app.run(host='0.0.0.0')
 
