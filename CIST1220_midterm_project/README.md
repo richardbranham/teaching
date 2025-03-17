@@ -1,12 +1,15 @@
 ## System setup for CIST1220 midterm
 
 ### Overview
-This document describes the necessary preparations to student computers for the CIST1220 midterm project. The steps below will enable you to create and execute SQL queries to meet the project requirements. **These steps have been tested on Windows.  The exact actions will vary slightly for macOS but the general steps are the same.**
+This document describes the necessary preparations to student computers for the CIST1220 midterm project. The steps below will enable you to create and execute SQL queries to meet the project requirements. **These steps are for Windows 10 and 11.  The exact actions will vary slightly for macOS but the general steps are the same.**
 
 ### Prepare your computer for the CIST1220 midterm project.
 
 #### 1. Copy the project files to your machine
-Unzip midterm project files to your desired working directory.
+- Open Windows Explorer and navigate to %appdata%.
+- Create a midterm project folder called CIST1220_midterm_project.
+- Unzip midterm project files to %appdata%\CIST1220_midterm_project
+- ** You will use %appdata%\CIST1220_midterm_project frequently, so remember it, make a note of it somewhere, or create a shortcut to it. **
 
 #### 2. Install Python 3
 It should be installable using the built-in software or package manager on your computer.  It is available in Microsoft Store, for example.  If a direct download and install is needed, Python 3 downloads are at this link:
@@ -15,7 +18,7 @@ https://www.python.org/downloads/
 - Confirm that there are no errors with the installation.  
 - Open a command window
     - On Windows click Start and then type "cmd", then press Enter.
-- In the command window, change directory to the location where you unzipped the midterm project files.
+- In the command window, change directory to %appdata%\CIST1220_midterm_project.
 - In the command window, run this command to confirm the Python version:
     `python -V`
 - The latest version is 3.13, but any version greater than 3.10 should be ok.

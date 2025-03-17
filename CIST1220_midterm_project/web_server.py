@@ -18,7 +18,7 @@ db_path = 'my_database.db'
 
 def run_query(input1, input2):
     # Connect to SQLite database
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, isolation_level=None)
     c = conn.cursor()
 
     # Execute the query with inputs
@@ -28,8 +28,14 @@ def run_query(input1, input2):
             if sql.strip().startswith("#"):
                 print(f"Ignoring comment:  {sql}")
             else:
-                print(f"Executing SQL:  {sql}")
-                result = c.execute(sql, (input1, input2)).fetchall()
+                if sql.strip().startswith("insert"):
+                    print(f"Executing SQL insert:  {sql} with input1 = {input1} and input2 = {input2}")
+                    result = c.execute(sql, (input1, input2))
+                    print(f"result = {result}")
+                if sql.strip().startswith("select"):
+                    print(f"Executing SQL select:  {sql} with input1 = {input1} and input2 = {input2}")
+                    result = c.execute(sql, (input1, input2)).fetchall()
+                    print(f"result = {result}")
 
     return result
 
@@ -52,7 +58,7 @@ def index():
 @app.route('/csv', methods=['GET', 'POST'])
 def csv_export():
     # Connect to SQLite database
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, isolation_level=None)
     c = conn.cursor()
 
     with open('midterm.sql', 'r') as f:
