@@ -28,7 +28,7 @@ def run_query(input1, input2):
             if sql.strip().startswith("#"):
                 print(f"Ignoring comment:  {sql}")
             else:
-                if sql.strip().startswith("insert"):
+                if sql.strip().lower().startswith("insert"):
                     print(f"Executing SQL insert:  {sql} with input1 = {input1} and input2 = {input2}")
                     result = c.execute(sql, (input1, input2))
                     print(f"result = {result}")
@@ -59,24 +59,21 @@ def index():
 def csv_export():
     # Connect to SQLite database
     conn = sqlite3.connect(db_path, isolation_level=None)
+    print(F"conn = {conn}, db_path = {db_path}")
     c = conn.cursor()
 
-    with open('midterm.sql', 'r') as f:
-        for sql in f:
-            if sql.strip().startswith("#"):
-                print(f"Ignoring comment:  {sql}")
-            else:
-                print(f"Executing SQL:  {sql}")
-                sql = "select * from my_table"
-                result = c.execute(sql).fetchall()
+    sql = "select * from my_table"
+    print(f"Executing SQL:  {sql}")
+    print(F"c.execute")
+    result = c.execute(sql).fetchall()
 
-                csv_output = io.StringIO()
-                csv_writer = csv.writer(csv_output)
-                csv_writer.writerows(result)
-                csv_string = csv_output.getvalue()
-                csv_output.close()
-                conn.close()
-                print(csv_string)
+    csv_output = io.StringIO()
+    csv_writer = csv.writer(csv_output)
+    csv_writer.writerows(result)
+    csv_string = csv_output.getvalue()
+    csv_output.close()
+    conn.close()
+    print(csv_string)
 
     return csv_string.replace("\n", "<br />")
 
