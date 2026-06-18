@@ -1,0 +1,64 @@
+---
+- hosts: jupyterhub
+  become: yes
+
+  vars:
+    jupyterhub_dir: /opt/jupyterhub
+    notebook_image: classroom-notebook
+
+  tasks:
+
+  - name: Install packages
+    apt:
+      name:
+        - docker.io
+        - python3-pip
+      update_cache: yes
+
+  - name: Start Docker
+    service:
+      name: docker
+      state: started
+      enabled: yes
+
+  - name: Create JupyterHub directory
+    file:
+      path: "{{ jupyterhub_dir }}"
+      state: directory
+      owner: root
+      group: root
+      mode: "0755"
+
+  - name: Deploy Dockerfile
+    copy:
+      dest: "{{ jupyterhub_dir }}/Dockerfile"
+      content: |
+        FROM jupyter/base-notebook:latest
+
+        RUN pip install \
+            numpy \
+            pandas \
+            matplotlib \
+            jupyterlab
+
+  - name: Build notebook image
+    community.docker.docker_image:
+      name: "{{ notebook_image }}"
+      source: build
+      build:
+        path: "{{ jupyterhub_dir }}"
+
+  - name: Create JupyterHub volume
+    community.docker.docker_volume:
+      name: jupyterhub-data
+
+  - name: Run JupyterHub container
+    community.docker.docker_container:
+      name: jupyterhub
+      image: jupyterhub/jupyterhub
+      restart_policy: unless-stopped
+      published_ports:
+        - "8000:8000"
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - jupyterhub-data:/srv/jupyterhub

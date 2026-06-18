@@ -57,11 +57,11 @@ void setup() {
 void loop() {
   // Read temperature
   double temperature = thermocouple.readCelsius();
-  String tempStr = isnan(temperature) ? "Error reading temperature!" : String(temperature, 2) + " °C";
+  String tempStr = isnan(temperature) ? "Error reading temperature!" : String(temperature, 2) + " Â°C";
 
-  if (temperature >= 20) {
+  if (temperature < 15) {
     digitalWrite(2, HIGH);
-  } else {
+  } else if (temperature > 27) {
     digitalWrite(2, LOW);
   }
   Serial.print("temp is: ");
@@ -90,7 +90,7 @@ void loop() {
           // client.println("<meta http-equiv=\"refresh\" content=\"5\">");  // Auto-refresh every 5s
           client.println("</head><body>");
           client.println("<h1>Thermocouple Temperature</h1>");
-          client.println("<p><strong>Temperature: " + tempStr + "</strong></p>");
+          client.println("<p><strong>Temperature: " + tempStr + " and fan is " + String(digitalRead(2)) + "</strong></p>");
           client.println("<p>Page refreshes every 5 seconds.</p>");
           client.println("</body></html>");
 
