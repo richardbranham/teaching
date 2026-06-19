@@ -1,10 +1,15 @@
 ---
-- hosts: jupyterhub
+- hosts: jupyterhub-01
   become: yes
 
   vars:
     jupyterhub_dir: /opt/jupyterhub
+    jupyterhub_user_storage_dir: /srv/jupyterhub/users
+    jupyterhub_venv_dir: /opt/jupyterhub-venv
     notebook_image: classroom-notebook
+    github_client_id: Ov23li5Rb7rHQHtQ9I5A
+    github_client_secret: 1f60278438b2569326250439b9fed6e98f80c1b2
+    github_callback_url: https://jhub.branham.us/hub/oauth_callback
 
   tasks:
 
@@ -13,7 +18,65 @@
       name:
         - docker.io
         - python3-pip
+        - python3-venv
+        - fail2ban
+        - nginx
+        - certbot
+        - python3-certbot-nginx
+        - ufw
+        - net-tools
       update_cache: yes
+
+  - name: Create JupyterHub virtual environment
+    command: python3 -m venv {{ jupyterhub_venv_dir }}
+    args:
+      creates: "{{ jupyterhub_venv_dir }}/bin/python"
+
+  - name: Install dockerspawner in virtual environment
+    pip:
+      name: dockerspawner
+      state: present
+      virtualenv: "{{ jupyterhub_venv_dir }}"
+      virtualenv_command: python3 -m venv
+
+  - name: Configure UFW to allow only required inbound ports
+    ufw:
+      direction: incoming
+      policy: deny
+
+  - name: Configure UFW to allow outbound traffic
+    ufw:
+      direction: outgoing
+      policy: allow
+
+  - name: Allow SSH through UFW
+    ufw:
+      rule: allow
+      port: '22'
+      proto: tcp
+
+  - name: Allow HTTP through UFW
+    ufw:
+      rule: allow
+      port: '80'
+      proto: tcp
+
+  - name: Allow HTTPS through UFW
+    ufw:
+      rule: allow
+      port: '443'
+      proto: tcp
+
+  - name: Enable UFW
+    ufw:
+      state: enabled
+
+  - name: Install oauthenticator in virtual environment
+    pip:
+      name: oauthenticator
+      state: present
+      virtualenv: "{{ jupyterhub_venv_dir }}"
+      virtualenv_command: python3 -m venv
 
   - name: Start Docker
     service:
@@ -21,9 +84,71 @@
       state: started
       enabled: yes
 
+  - name: Create richard user
+    user:
+      name: richard
+      shell: /bin/bash
+      create_home: yes
+      state: present
+      #  update_password: on_create
+      #  password: "{{ lookup('ansible.builtin.password', '/dev/null', length=32, chars='ascii_letters,digits,._-!@#$%^&*()') | password_hash('sha512') }}"
+
+  - name: Configure fail2ban
+    copy:
+      dest: /etc/fail2ban/jail.d/jupyterhub.conf
+      content: |
+        [DEFAULT]
+        ignoreip = 127.0.0.1/8 ::1
+        findtime = 60
+        maxretry = 3
+        bantime = 600
+        backend = auto
+
+        [sshd-10m]
+        enabled = true
+        port = ssh
+        filter = sshd
+        maxretry = 3
+        bantime = 600
+
+        [sshd-30m]
+        enabled = true
+        port = ssh
+        filter = sshd
+        maxretry = 6
+        bantime = 1800
+
+        [sshd-perm]
+        enabled = true
+        port = ssh
+        filter = sshd
+        maxretry = 9
+        bantime = -1
+        actionban = printf '%s\n' '<ip>' >> /var/log/banlist.txt
+
+  - name: Ensure banlist file exists
+    file:
+      path: /var/log/banlist.txt
+      state: touch
+      mode: "0644"
+
+  - name: Start and enable fail2ban
+    service:
+      name: fail2ban
+      state: started
+      enabled: yes
+
   - name: Create JupyterHub directory
     file:
       path: "{{ jupyterhub_dir }}"
+      state: directory
+      owner: root
+      group: root
+      mode: "0755"
+
+  - name: Create persistent storage directory for users
+    file:
+      path: "{{ jupyterhub_user_storage_dir }}"
       state: directory
       owner: root
       group: root
@@ -48,9 +173,92 @@
       build:
         path: "{{ jupyterhub_dir }}"
 
+  - name: Create JupyterHub config file
+    copy:
+      dest: "{{ jupyterhub_dir }}/jupyterhub_config.py"
+      content: |
+        import os
+
+        c.JupyterHub.authenticator_class = "oauthenticator.github.GitHubOAuthenticator"
+        c.JupyterHub.spawner_class = "dockerspawner.DockerSpawner"
+        c.JupyterHub.hub_connect_url = "https://jhub.branham.us"
+        c.JupyterHub.bind_url = "http://0.0.0.0:8000/"
+        c.JupyterHub.hub_bind_url = "http://0.0.0.0:8081"
+        c.GitHubOAuthenticator.client_id = os.environ["GITHUB_CLIENT_ID"]
+        c.GitHubOAuthenticator.client_secret = os.environ["GITHUB_CLIENT_SECRET"]
+        c.GitHubOAuthenticator.oauth_callback_url = os.environ.get(
+            "GITHUB_CALLBACK_URL", "{{ github_callback_url }}"
+        )
+        c.GitHubOAuthenticator.scope = ["read:user", "user:email"]
+        c.Authenticator.allow_all = True
+        c.Authenticator.admin_users = {"richard"}
+        c.DockerSpawner.image = "{{ notebook_image }}"
+        c.DockerSpawner.remove = True
+        c.DockerSpawner.notebook_dir = "/home/jovyan"
+        c.DockerSpawner.volumes = {
+            "jupyterhub-user-data": "/home/jovyan"
+        }
+        c.DockerSpawner.environment = {
+            "CHOWN_HOME": "yes",
+            "CHOWN_HOME_OPTS": "-R"
+        }
+
   - name: Create JupyterHub volume
     community.docker.docker_volume:
       name: jupyterhub-data
+
+  - name: Create user storage volume
+    community.docker.docker_volume:
+      name: jupyterhub-user-data
+
+  - name: Write Nginx site config
+    copy:
+      dest: /etc/nginx/sites-available/jupyterhub
+      content: |
+        server {
+            listen 80;
+            server_name jhub.branham.us;
+            return 301 https://$host$request_uri;
+        }
+
+        server {
+            listen 443 ssl;
+            server_name jhub.branham.us;
+
+            ssl_certificate /etc/letsencrypt/live/jhub.branham.us/fullchain.pem;
+            ssl_certificate_key /etc/letsencrypt/live/jhub.branham.us/privkey.pem;
+
+            client_max_body_size 50m;
+            client_header_buffer_size 32k;
+            large_client_header_buffers 4 32k;
+            proxy_buffer_size 16k;
+            proxy_busy_buffers_size 64k;
+
+            location / {
+                proxy_pass http://127.0.0.1:8000;
+                proxy_pass_request_headers on;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_set_header X-Forwarded-Host $host;
+                proxy_set_header X-Forwarded-Port $server_port;
+                proxy_set_header Connection "";
+                proxy_read_timeout 300;
+                proxy_connect_timeout 300;
+            }
+        }
+
+  - name: Enable Nginx site
+    file:
+      src: /etc/nginx/sites-available/jupyterhub
+      dest: /etc/nginx/sites-enabled/jupyterhub
+      state: link
+
+  - name: Remove default Nginx site
+    file:
+      path: /etc/nginx/sites-enabled/default
+      state: absent
 
   - name: Run JupyterHub container
     community.docker.docker_container:
@@ -59,6 +267,30 @@
       restart_policy: unless-stopped
       published_ports:
         - "8000:8000"
+      command:
+        - /bin/sh
+        - -lc
+        - >-
+          pip install --no-cache-dir dockerspawner oauthenticator &&
+          jupyterhub -f /srv/jupyterhub/jupyterhub_config.py
+      env:
+        GITHUB_CLIENT_ID: "{{ github_client_id }}"
+        GITHUB_CLIENT_SECRET: "{{ github_client_secret }}"
+        GITHUB_CALLBACK_URL: "{{ github_callback_url }}"
       volumes:
         - /var/run/docker.sock:/var/run/docker.sock
+        - "{{ jupyterhub_dir }}/jupyterhub_config.py:/srv/jupyterhub/jupyterhub_config.py"
         - jupyterhub-data:/srv/jupyterhub
+        - jupyterhub-user-data:/srv/jupyterhub/users
+
+  - name: Write Certbot command to file for future reference
+    copy:
+      dest: /root/jhub-cert.txt
+      content: |
+        certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us
+
+  - name: Start and enable Nginx
+    service:
+      name: nginx
+      state: started
+      enabled: yes
