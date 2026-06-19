@@ -27,6 +27,14 @@
         - net-tools
       update_cache: yes
 
+  - name: Create Docker network for JupyterHub
+    command: docker network create jupyterhub-network
+    register: docker_network_result
+    changed_when: docker_network_result.rc == 0
+    failed_when:
+      - docker_network_result.rc != 0
+      - '"already exists" not in docker_network_result.stderr'
+
   - name: Create JupyterHub virtual environment
     command: python3 -m venv {{ jupyterhub_venv_dir }}
     args:
@@ -182,8 +190,11 @@
         c.JupyterHub.authenticator_class = "oauthenticator.github.GitHubOAuthenticator"
         c.JupyterHub.spawner_class = "dockerspawner.DockerSpawner"
 
+        c.DockerSpawner.network_name = "jupyterhub-network"
+        c.DockerSpawner.use_internal_ip = True
+
         #c.JupyterHub.hub_connect_url = "https://jhub.branham.us"
-        c.JupyterHub.hub_connect_url = "http://127.0.0.1:8081"
+        c.JupyterHub.hub_connect_url = "http://jupyterhub:8081"
 
         c.JupyterHub.hub_ip = '0.0.0.0'
         c.JupyterHub.hub_connect_ip = '127.0.0.1'
@@ -299,6 +310,8 @@
         GITHUB_CLIENT_ID: "{{ github_client_id }}"
         GITHUB_CLIENT_SECRET: "{{ github_client_secret }}"
         GITHUB_CALLBACK_URL: "{{ github_callback_url }}"
+      networks:
+        - name: jupyterhub-network
       volumes:
         - /var/run/docker.sock:/var/run/docker.sock
         - "{{ jupyterhub_dir }}/jupyterhub_config.py:/srv/jupyterhub/jupyterhub_config.py"
