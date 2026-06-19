@@ -1,5 +1,5 @@
 ---
-- hosts: jupyterhub-01
+- hosts: all
   become: yes
 
   vars:
@@ -202,6 +202,32 @@
         c.JupyterHub.bind_url = "http://0.0.0.0:8000/"
         c.JupyterHub.hub_bind_url = "http://0.0.0.0:8081"
 
+        c.JupyterHub.services = [
+          {
+              "name": "idle-culler",
+              "command": [
+                  "python3",
+                  "-m",
+                  "jupyterhub_idle_culler",
+                  "--timeout=300",
+                  "--cull-every=60",
+              ],
+          }
+        ]        
+
+        c.JupyterHub.load_roles = [
+          {
+              "name": "idle-culler",
+              "services": ["idle-culler"],
+              "scopes": [
+                  "list:users",
+                  "read:users:activity",
+                  "read:servers",
+                  "delete:servers",
+              ],
+          }
+        ]
+
         c.JupyterHub.tornado_settings = {
             "max_header_size": 1048576,
         }
@@ -304,7 +330,7 @@
         - /bin/sh
         - -lc
         - >-
-          pip install --no-cache-dir dockerspawner oauthenticator &&
+          pip install --no-cache-dir dockerspawner oauthenticator jupyterhub-idle-culler &&
           jupyterhub -f /srv/jupyterhub/jupyterhub_config.py
       env:
         GITHUB_CLIENT_ID: "{{ github_client_id }}"
