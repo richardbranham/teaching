@@ -168,6 +168,15 @@
       content: |
         FROM jupyter/base-notebook:latest
 
+        USER root
+
+        RUN apt-get update && \
+          apt-get install -y sqlite3 && \
+          apt-get clean && \
+          rm -rf /var/lib/apt/lists/*
+
+        USER ${NB_UID}
+
         RUN pip install \
             numpy \
             pandas \
@@ -240,7 +249,7 @@
         c.Authenticator.allow_all = True
         c.Authenticator.admin_users = {"richard"}
         c.DockerSpawner.image = "{{ notebook_image }}"
-        c.DockerSpawner.remove = False
+        c.DockerSpawner.remove = True
         c.DockerSpawner.notebook_dir = "/home/jovyan"
 
         c.DockerSpawner.volumes = {
