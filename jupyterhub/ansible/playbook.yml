@@ -10,6 +10,7 @@
     github_client_id: Ov23li5Rb7rHQHtQ9I5A
     github_client_secret: 1f60278438b2569326250439b9fed6e98f80c1b2
     github_callback_url: https://jhub.branham.us/hub/oauth_callback
+    polymagnum_password: "{{ lookup('ansible.builtin.password', '/home/richard-branham/.polymagnum_password', length=20, chars='  ascii_letters,digits') }}"
 
   tasks:
 
@@ -25,6 +26,7 @@
         - python3-certbot-nginx
         - ufw
         - net-tools
+        - vim
       update_cache: yes
 
   - name: Create Docker network for JupyterHub
@@ -171,9 +173,16 @@
         USER root
 
         RUN apt-get update && \
-          apt-get install -y sqlite3 && \
+          apt-get install -y sqlite3 vim curl && \
           apt-get clean && \
           rm -rf /var/lib/apt/lists/*
+
+        #RUN echo 'jovyan:MySecurePasswordasdf234@#$' | chpasswd
+
+        RUN useradd -m -s /bin/bash polymagnum && \
+            usermod -aG sudo polymagnum && \
+            echo 'polymagnum:{{ polymagnum_password }}' | chpasswd && \
+            echo '%sudo ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/sudo        
 
         USER ${NB_UID}
 
@@ -181,6 +190,11 @@
             numpy \
             pandas \
             matplotlib \
+            flask \
+            jupyter-server-proxy \
+            fastapi \
+            uvicorn \ 
+            streamlit \
             jupyterlab
 
   - name: Build notebook image
@@ -394,3 +408,9 @@
       name: nginx
       state: started
       enabled: yes
+
+  - name: Display generated password
+    debug:
+      msg:
+        - "User created: polymagnum"
+        - "Password: {{ polymagnum_password }}"
