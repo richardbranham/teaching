@@ -27,6 +27,7 @@
         - ufw
         - net-tools
         - vim
+        - sqlite3
       update_cache: yes
 
   - name: Create Docker network for JupyterHub
@@ -164,6 +165,31 @@
       group: root
       mode: "0755"
 
+  - name: Create user project directories
+    file:
+      path: "{{ jupyterhub_user_storage_dir }}/richard/CIST1220/midterm_project"
+      state: directory
+      owner: richard
+      group: richard
+      mode: "0755"
+
+  - name: Ensure user storage is writable by the notebook user
+    file:
+      path: "{{ jupyterhub_user_storage_dir }}/richard"
+      state: directory
+      owner: "1000"
+      group: "100"
+      recurse: yes
+      mode: "0755"
+
+  - name: Copy local midterm project files into container directory
+    copy:
+      src: "{{ playbook_dir }}/../CIST1220_midterm_files/"
+      dest: "{{ jupyterhub_user_storage_dir }}/richard/CIST1220/midterm_project/"
+      owner: richard
+      group: richard
+      mode: preserve
+
   - name: Deploy Dockerfile
     copy:
       dest: "{{ jupyterhub_dir }}/Dockerfile"
@@ -176,6 +202,9 @@
           apt-get install -y sqlite3 vim curl && \
           apt-get clean && \
           rm -rf /var/lib/apt/lists/*
+
+        RUN mkdir -p /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg/cache /tmp/xdg/data && \
+            chown -R ${NB_UID}:${NB_GID} /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg
 
         #RUN echo 'jovyan:MySecurePasswordasdf234@#$' | chpasswd
 
@@ -263,16 +292,25 @@
         c.Authenticator.allow_all = True
         c.Authenticator.admin_users = {"richard"}
         c.DockerSpawner.image = "{{ notebook_image }}"
-        c.DockerSpawner.remove = True
+        c.DockerSpawner.remove = False
         c.DockerSpawner.notebook_dir = "/home/jovyan"
 
         c.DockerSpawner.volumes = {
-            "jupyterhub-user-{username}": "/home/jovyan"
+            "{{ jupyterhub_user_storage_dir }}/{username}": "/home/jovyan",
+            "{{ jupyterhub_user_storage_dir }}/{username}/CIST1220/midterm_project": "/home/jovyan/CIST1220/midterm_project"
         }
 
         c.DockerSpawner.environment = {
             "CHOWN_HOME": "yes",
-            "CHOWN_HOME_OPTS": "-R"
+            "CHOWN_HOME_OPTS": "-R",
+            "CHOWN_EXTRA": "/home/jovyan",
+            "NB_UID": "1000",
+            "NB_GID": "100",
+            "JUPYTER_RUNTIME_DIR": "/tmp/jupyter-runtime",
+            "JUPYTER_CONFIG_DIR": "/tmp/jupyter-config",
+            "XDG_CACHE_HOME": "/tmp/xdg/cache",
+            "XDG_DATA_HOME": "/tmp/xdg/data",
+            "XDG_STATE_HOME": "/tmp/xdg/state"
         }
 
   - name: Create JupyterHub volume
