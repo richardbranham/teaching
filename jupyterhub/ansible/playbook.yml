@@ -224,7 +224,8 @@
             fastapi \
             uvicorn \ 
             streamlit \
-            jupyterlab
+            jupyterlab \
+            copier
 
   - name: Build notebook image
     community.docker.docker_image:
@@ -261,7 +262,7 @@
                   "python3",
                   "-m",
                   "jupyterhub_idle_culler",
-                  "--timeout=300",
+                  "--timeout=1500",
                   "--cull-every=60",
               ],
           }

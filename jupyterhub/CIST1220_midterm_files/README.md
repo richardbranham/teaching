@@ -3,6 +3,10 @@
 ### Overview
 The steps below will enable you to create and execute SQL queries to meet the project requirements.
 
+#### Important!  After the steps below are finished and you are ready to open the web page for the midterm project, make sure the trailing slash is included in the address.  For example:
+- https://jhub.branham.us/user/richardbranham/proxy/5000/ <== Make sure the trailing slash is present.
+- https://jhub.branham.us/user/richardbranham/proxy/5000 <== This is incorrect!
+
 #### 1. Make sure you have a working GitHub account and can log in to it.
 
 #### 5. SQLite3
