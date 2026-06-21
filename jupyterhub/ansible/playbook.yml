@@ -165,29 +165,20 @@
       group: root
       mode: "0755"
 
-  - name: Create user project directories
+  - name: Create shared project directories
     file:
-      path: "{{ jupyterhub_user_storage_dir }}/richard/CIST1220/midterm_project"
+      path: "{{ jupyterhub_user_storage_dir }}/shared/CIST1220/midterm_project"
       state: directory
-      owner: richard
-      group: richard
+      owner: root
+      group: root
       mode: "0755"
 
-  - name: Ensure user storage is writable by the notebook user
-    file:
-      path: "{{ jupyterhub_user_storage_dir }}/richard"
-      state: directory
-      owner: "1000"
-      group: "100"
-      recurse: yes
-      mode: "0755"
-
-  - name: Copy local midterm project files into container directory
+  - name: Copy local midterm project files into shared project directory
     copy:
       src: "{{ playbook_dir }}/../CIST1220_midterm_files/"
-      dest: "{{ jupyterhub_user_storage_dir }}/richard/CIST1220/midterm_project/"
-      owner: richard
-      group: richard
+      dest: "{{ jupyterhub_user_storage_dir }}/shared/CIST1220/midterm_project/"
+      owner: root
+      group: root
       mode: preserve
 
   - name: Deploy Dockerfile
@@ -297,7 +288,7 @@
 
         c.DockerSpawner.volumes = {
             "{{ jupyterhub_user_storage_dir }}/{username}": "/home/jovyan",
-            "{{ jupyterhub_user_storage_dir }}/{username}/CIST1220/midterm_project": "/home/jovyan/CIST1220/midterm_project"
+            "{{ jupyterhub_user_storage_dir }}/shared/CIST1220/midterm_project": "/home/jovyan/CIST1220/midterm_project"
         }
 
         c.DockerSpawner.environment = {
