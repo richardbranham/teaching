@@ -181,6 +181,15 @@
       group: root
       mode: preserve
 
+  - name: Make shared project files writable for notebook users
+    file:
+      path: "{{ jupyterhub_user_storage_dir }}/shared/CIST1220/midterm_project"
+      state: directory
+      owner: root
+      group: root
+      recurse: yes
+      mode: "0777"
+
   - name: Deploy Dockerfile
     copy:
       dest: "{{ jupyterhub_dir }}/Dockerfile"
@@ -291,10 +300,20 @@
             "{{ jupyterhub_user_storage_dir }}/shared/CIST1220/midterm_project": "/home/jovyan/CIST1220/midterm_project"
         }
 
+        c.DockerSpawner.extra_create_kwargs = {
+            "user": "root"
+        }
+
+        c.DockerSpawner.environment = {
+            "CHOWN_EXTRA": "/home/jovyan/CIST1220/midterm_project",
+            "CHOWN_EXTRA_OPTS": "-R"
+        }
+
         c.DockerSpawner.environment = {
             "CHOWN_HOME": "yes",
             "CHOWN_HOME_OPTS": "-R",
             "CHOWN_EXTRA": "/home/jovyan",
+            "CHOWN_EXTRA": "/home/jovyan/CIST1220/midterm_project",
             "NB_UID": "1000",
             "NB_GID": "100",
             "JUPYTER_RUNTIME_DIR": "/tmp/jupyter-runtime",

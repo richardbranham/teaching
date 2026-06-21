@@ -12,3 +12,7 @@ sqlite3 /srv/jupyterhub/jupyterhub.sqlite
 
 SELECT id, name FROM users;
 
+https://jhub.branham.us/user/richardbranham/proxy/5000/ <== Make sure the trailing slash is present!
+
+https://jhub.branham.us/user/richardbranham/proxy/5000/csv
+
