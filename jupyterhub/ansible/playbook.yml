@@ -101,8 +101,6 @@
       shell: /bin/bash
       create_home: yes
       state: present
-      #  update_password: on_create
-      #  password: "{{ lookup('ansible.builtin.password', '/dev/null', length=32, chars='ascii_letters,digits,._-!@#$%^&*()') | password_hash('sha512') }}"
 
   - name: Configure fail2ban
     copy:
@@ -167,7 +165,7 @@
 
   - name: Create master files directory
     file:
-      path: /srv/jupyterhub/CIST1220/midterm_project_master
+      path: /srv/jupyterhub/CIST1220/midterm_files_master
       state: directory
       owner: root
       group: root
@@ -176,10 +174,16 @@
   - name: Copy master midterm files to server
     copy:
       src: ../CIST1220_midterm_files/
-      dest: /srv/jupyterhub/CIST1220/midterm_project_master/
+      dest: /srv/jupyterhub/CIST1220/midterm_files_master/
       owner: root
       group: root
-      mode: "0444"
+      mode: preserve
+
+  - name: Make master midterm files read-only on the server
+    shell: |
+      find /srv/jupyterhub/CIST1220/midterm_files_master -type d -exec chmod 0555 {} +
+      find /srv/jupyterhub/CIST1220/midterm_files_master -type f -exec chmod 0444 {} +
+    changed_when: true
       
   - name: Deploy Dockerfile
     copy:
@@ -205,20 +209,20 @@
         # Secure startup script that manages its own directories and permissions safely
         RUN mkdir -p /usr/local/bin/before-notebook.d/ && \
             echo '#!/bin/bash\n\
-            # Ensure the target directory structure exists first\n\
+            set -e\n\
+            mkdir -p /home/jovyan/CIST1220\n\
+            \n\
+            # Create a writable working folder without touching the read-only master copy\n\
             mkdir -p /home/jovyan/CIST1220/midterm_project\n\
-            \n\
-            if [ -d "/srv/master_project" ]; then\n\
-                echo "Syncing fresh, read-only midterm files..."\n\
-                # Clear out any old student mutations to guarantee a clean mirror\n\
-                rm -rf /home/jovyan/CIST1220/midterm_project/*\n\
-                # Copy everything including hidden files cleanly\n\
-                cp -rp /srv/master_project/. /home/jovyan/CIST1220/midterm_project/\n\
-            fi\n\
-            \n\
-            # Set explicit ownership and lock down permissions\n\
             chown -R 1000:100 /home/jovyan/CIST1220/midterm_project\n\
-            chmod -R a-w /home/jovyan/CIST1220/midterm_project' > /usr/local/bin/before-notebook.d/sync_midterm.sh && \
+            chmod -R u+rwX /home/jovyan/CIST1220/midterm_project\n\
+            \n\
+            # Only verify the mounted readonly directory; do not chown it\n\
+            if [ -d "/home/jovyan/CIST1220/midterm_files_master" ] && [ -n "$(find /home/jovyan/CIST1220/midterm_files_master -mindepth 1 -maxdepth 1 -print -quit)" ]; then\n\
+                echo "Master files are available for the user"\n\
+            else\n\
+                echo "Master files directory is not populated yet"\n\
+            fi' > /usr/local/bin/before-notebook.d/sync_midterm.sh && \
             chmod +x /usr/local/bin/before-notebook.d/sync_midterm.sh
 
         USER ${NB_UID}
@@ -305,12 +309,12 @@
 
         c.DockerSpawner.volumes = {
             "{{ jupyterhub_user_storage_dir }}/{username}": "/home/jovyan",
-            "/srv/jupyterhub/CIST1220/midterm_project_master": {
-                "bind": "/srv/master_project",
-                "mode": "ro"
+            "/srv/jupyterhub/CIST1220/midterm_files_master": {
+                "bind": "/home/jovyan/CIST1220/midterm_files_master",
+                "mode": "rw"
             }
         }
-                
+
         c.DockerSpawner.extra_create_kwargs = {
             "user": "root"
         }
