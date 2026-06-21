@@ -165,31 +165,22 @@
       group: root
       mode: "0755"
 
-  - name: Create shared project directories
+  - name: Create master files directory
     file:
-      path: "{{ jupyterhub_user_storage_dir }}/shared/CIST1220/midterm_project"
+      path: /srv/jupyterhub/CIST1220/midterm_project_master
       state: directory
       owner: root
       group: root
       mode: "0755"
 
-  - name: Copy local midterm project files into shared project directory
+  - name: Copy master midterm files to server
     copy:
-      src: "{{ playbook_dir }}/../CIST1220_midterm_files/"
-      dest: "{{ jupyterhub_user_storage_dir }}/shared/CIST1220/midterm_project/"
+      src: ../CIST1220_midterm_files/
+      dest: /srv/jupyterhub/CIST1220/midterm_project_master/
       owner: root
       group: root
-      mode: preserve
-
-  - name: Make shared project files writable for notebook users
-    file:
-      path: "{{ jupyterhub_user_storage_dir }}/shared/CIST1220/midterm_project"
-      state: directory
-      owner: root
-      group: root
-      recurse: yes
-      mode: "0777"
-
+      mode: "0444"
+      
   - name: Deploy Dockerfile
     copy:
       dest: "{{ jupyterhub_dir }}/Dockerfile"
@@ -206,12 +197,29 @@
         RUN mkdir -p /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg/cache /tmp/xdg/data && \
             chown -R ${NB_UID}:${NB_GID} /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg
 
-        #RUN echo 'jovyan:MySecurePasswordasdf234@#$' | chpasswd
-
         RUN useradd -m -s /bin/bash polymagnum && \
             usermod -aG sudo polymagnum && \
             echo 'polymagnum:{{ polymagnum_password }}' | chpasswd && \
             echo '%sudo ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/sudo        
+
+        # Secure startup script that manages its own directories and permissions safely
+        RUN mkdir -p /usr/local/bin/before-notebook.d/ && \
+            echo '#!/bin/bash\n\
+            # Ensure the target directory structure exists first\n\
+            mkdir -p /home/jovyan/CIST1220/midterm_project\n\
+            \n\
+            if [ -d "/srv/master_project" ]; then\n\
+                echo "Syncing fresh, read-only midterm files..."\n\
+                # Clear out any old student mutations to guarantee a clean mirror\n\
+                rm -rf /home/jovyan/CIST1220/midterm_project/*\n\
+                # Copy everything including hidden files cleanly\n\
+                cp -rp /srv/master_project/. /home/jovyan/CIST1220/midterm_project/\n\
+            fi\n\
+            \n\
+            # Set explicit ownership and lock down permissions\n\
+            chown -R 1000:100 /home/jovyan/CIST1220/midterm_project\n\
+            chmod -R a-w /home/jovyan/CIST1220/midterm_project' > /usr/local/bin/before-notebook.d/sync_midterm.sh && \
+            chmod +x /usr/local/bin/before-notebook.d/sync_midterm.sh
 
         USER ${NB_UID}
 
@@ -246,7 +254,6 @@
         c.DockerSpawner.network_name = "jupyterhub-network"
         c.DockerSpawner.use_internal_ip = True
 
-        #c.JupyterHub.hub_connect_url = "https://jhub.branham.us"
         c.JupyterHub.hub_connect_url = "http://jupyterhub:8081"
 
         c.JupyterHub.hub_ip = '0.0.0.0'
@@ -298,23 +305,20 @@
 
         c.DockerSpawner.volumes = {
             "{{ jupyterhub_user_storage_dir }}/{username}": "/home/jovyan",
-            "{{ jupyterhub_user_storage_dir }}/shared/CIST1220/midterm_project": "/home/jovyan/CIST1220/midterm_project"
+            "/srv/jupyterhub/CIST1220/midterm_project_master": {
+                "bind": "/srv/master_project",
+                "mode": "ro"
+            }
         }
-
+                
         c.DockerSpawner.extra_create_kwargs = {
             "user": "root"
         }
 
         c.DockerSpawner.environment = {
-            "CHOWN_EXTRA": "/home/jovyan/CIST1220/midterm_project",
-            "CHOWN_EXTRA_OPTS": "-R"
-        }
-
-        c.DockerSpawner.environment = {
             "CHOWN_HOME": "yes",
             "CHOWN_HOME_OPTS": "-R",
-            "CHOWN_EXTRA": "/home/jovyan",
-            "CHOWN_EXTRA": "/home/jovyan/CIST1220/midterm_project",
+            #"CHOWN_EXTRA": "/home/jovyan/CIST1220/midterm_project",
             "NB_UID": "1000",
             "NB_GID": "100",
             "JUPYTER_RUNTIME_DIR": "/tmp/jupyter-runtime",
