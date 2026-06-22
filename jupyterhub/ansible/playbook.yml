@@ -296,6 +296,7 @@
         from nativeauthenticator import NativeAuthenticator
         from tornado import web
         from dockerspawner import DockerSpawner
+        from nativeauthenticator.orm import UserInfo
 
         log = logging.getLogger("jupyterhub")
 
@@ -389,8 +390,31 @@
 
             def validate_username(self, username):
                 username = username.lower().strip()
+                return (
+                    username.endswith("@gwinnetttech.edu")
+                    or username.endswith("@student.gwinnetttech.edu")
+                )
 
-                return username.endswith("@gwinnetttech.edu")
+            async def pre_spawn_start(self, user, spawner):
+                db = self.db
+
+                userinfo = db.query(UserInfo).filter(
+                    UserInfo.username == user.name
+                ).first()
+
+                if userinfo and getattr(userinfo, "must_change_password", False):
+                    raise web.HTTPError(
+                        403,
+                        "Password change required"
+                    )
+                    
+                    
+            def post_save_password(self, userinfo):
+                userinfo.is_must_change_password = False
+
+        c.JupyterHub.template_vars = {
+            "login_notice": "First login requires changing your temporary password."
+        }
 
         # c.JupyterHub.authenticator_class = "oauthenticator.github.GitHubOAuthenticator"
         #c.JupyterHub.authenticator_class = NativeAuthenticator
@@ -406,9 +430,19 @@
             "I understand that this system is for Gwinnett Technical College students and faculty only.  I affirm that I am either an employee or a current student at Gwinnett Technical College, or I have been given explicit authorization to use this system."
         )
 
+        c.NativeAuthenticator.minimum_password_length = 10
+        c.NativeAuthenticator.check_common_password = True
         c.Authenticator.allow_all = True
         c.Authenticator.admin_users = {"rbranham@gwinnetttech.edu"}
         #c.Authenticator.admin_users = set()
+
+        c.NativeAuthenticator.tos = """
+          This system is for Gwinnett Technical College students, faculty, and explicitly authorized users.
+
+          If you forget your password, contact your instructor.
+
+          Password resets will assign a temporary password that must be changed immediately.
+          """
 
         #c.JupyterHub.spawner_class = "dockerspawner.DockerSpawner"
         c.JupyterHub.spawner_class = GwinnettDockerSpawner
@@ -599,32 +633,42 @@
       group: root
       mode: "0755"
       content: |
-        from jupyterhub.orm import User, new_session_factory
+        import bcrypt
+        from jupyterhub.orm import User
+        from jupyterhub.app import JupyterHub
         from nativeauthenticator.orm import UserInfo
-        from nativeauthenticator.crypto import set_password
-
-        db = new_session_factory()()
 
         username = "{{ password_reset_user }}"
-        password = "{{ password_reset_password }}"
+        temp_password = "{{ password_reset_password }}"
+
+        hashed = bcrypt.hashpw(
+            temp_password.encode("utf-8"),
+            bcrypt.gensalt()
+        ).decode("utf-8")
+
+        app = JupyterHub()
+        db = app.session_factory()
 
         user = User.find(db, name=username)
-
         if not user:
-            raise Exception(f"User {username} not found")
+            raise Exception(f"User not found: {username}")
 
-        userinfo = db.query(UserInfo).filter(
-            UserInfo.user_id == user.id
-        ).first()
+        userinfo = user.userinfo
 
         if not userinfo:
-            raise Exception(f"UserInfo missing for {username}")
+            raise Exception("UserInfo missing")
 
-        userinfo.password = set_password(password)
+        # set password
+        userinfo.password = hashed
+
+        # 🔥 FORCE PASSWORD CHANGE FLAG
+        userinfo.is_must_change_password = True  # we create this logical flag
 
         db.commit()
 
-        print(f"Password reset successfully for {username}")
+        print(f"Temporary password set for {username}")
+        print("User must change password on next login")
+
 
   - name: Run JupyterHub container
     community.docker.docker_container:
@@ -649,6 +693,7 @@
         - jupyterhub-data:/srv/jupyterhub
         - /srv/jupyterhub/users:/srv/jupyterhub/users
         - /srv/jupyterhub/CIST1220:/srv/jupyterhub/CIST1220
+        - /srv/jupyterhub/pw-reset.py:/srv/jupyterhub/pw-reset.py
 
           # pip install --no-cache-dir dockerspawner oauthenticator jupyterhub-idle-culler &&
       # env:
@@ -656,6 +701,15 @@
       #   GITHUB_CLIENT_SECRET: "{{ github_client_secret }}"
       #   GITHUB_CALLBACK_URL: "{{ githubZZZ_callback_url }}"
 
+  - name: Install reset-password command
+    copy:
+      dest: /usr/local/bin/reset-jhub-password
+      mode: "0755"
+      content: |
+        #!/bin/bash
+        docker exec jupyterhub \
+          python3 /srv/jupyterhub/pw-reset.py "$1"
+        
   - name: Write Certbot command to file for future reference
     copy:
       dest: /root/jhub-cert.txt

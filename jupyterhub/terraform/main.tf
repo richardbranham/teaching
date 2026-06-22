@@ -5,6 +5,7 @@ data "digitalocean_ssh_key" "default" {
 variable "jupyterhubs" {
   default = {
     "01" = "nyc3"
+    "02" = "nyc3"
   }
 }
 
