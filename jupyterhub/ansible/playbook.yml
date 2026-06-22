@@ -251,9 +251,43 @@
       dest: "{{ jupyterhub_dir }}/jupyterhub_config.py"
       content: |
         import os
+        import shutil
+        import logging
+
+        log = logging.getLogger("jupyterhub")
 
         c.JupyterHub.authenticator_class = "oauthenticator.github.GitHubOAuthenticator"
         c.JupyterHub.spawner_class = "dockerspawner.DockerSpawner"
+
+        def setup_midterm_files(spawner):
+            username = spawner.user.name
+
+            source_dir = "/srv/jupyterhub/CIST1220/midterm_files_master"
+
+            user_home = f"{{ jupyterhub_user_storage_dir }}/{username}"
+            target_dir = f"{user_home}/CIST1220/midterm_files_{username}"
+
+            os.makedirs(os.path.dirname(target_dir), exist_ok=True)
+
+            if not os.path.exists(target_dir):
+                shutil.copytree(source_dir, target_dir)
+                os.chmod(target_dir, 755)
+
+                for root, dirs, files in os.walk(target_dir):
+                    os.chown(root, 1000, 100)
+                    os.chmod(root, 0o755)
+
+                    for d in dirs:
+                        os.chown(os.path.join(root, d), 1000, 100)
+                        os.chmod(os.path.join(root, d), 0o755)
+
+                    for f in files:
+                        os.chown(os.path.join(root, f), 1000, 100)
+                        os.chmod(os.path.join(root, f), 0o755)
+
+                print(f"Created project directory for {username}")
+
+        c.Spawner.pre_spawn_hook = setup_midterm_files
 
         c.DockerSpawner.network_name = "jupyterhub-network"
         c.DockerSpawner.use_internal_ip = True
@@ -322,7 +356,6 @@
         c.DockerSpawner.environment = {
             "CHOWN_HOME": "yes",
             "CHOWN_HOME_OPTS": "-R",
-            #"CHOWN_EXTRA": "/home/jovyan/CIST1220/midterm_project",
             "NB_UID": "1000",
             "NB_GID": "100",
             "JUPYTER_RUNTIME_DIR": "/tmp/jupyter-runtime",
@@ -360,8 +393,6 @@
             client_max_body_size 50m;
             client_header_buffer_size 32k;
             large_client_header_buffers 4 32k;
-            #proxy_buffer_size 16k;
-            #proxy_busy_buffers_size 64k;
 
             location / {
                 proxy_pass http://127.0.0.1:8000;
@@ -380,18 +411,6 @@
 
                 proxy_read_timeout 86400;
                 proxy_connect_timeout 300;
-
-                # proxy_pass http://127.0.0.1:8000;
-                # proxy_pass_request_headers on;
-                # proxy_set_header Host $host;
-                # proxy_set_header X-Real-IP $remote_addr;
-                # proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                # proxy_set_header X-Forwarded-Proto $scheme;
-                # proxy_set_header X-Forwarded-Host $host;
-                # proxy_set_header X-Forwarded-Port $server_port;
-                # proxy_set_header Connection "";
-                # proxy_read_timeout 300;
-                # proxy_connect_timeout 300;
             }
         }
 
@@ -411,11 +430,11 @@
       path: /etc/nginx/nginx.conf
       marker: "#{mark} ANSIBLE MANAGED NGINX LIMITS"
       block: |
-        worker_processes auto;
-        worker_rlimit_nofile 65535;
+        #worker_processes auto;
+        #worker_rlimit_nofile 65535;
 
         events {
-            worker_connections 4096;
+            #worker_connections 4096;
         }
 
   - name: Run JupyterHub container
@@ -442,6 +461,7 @@
         - "{{ jupyterhub_dir }}/jupyterhub_config.py:/srv/jupyterhub/jupyterhub_config.py"
         - jupyterhub-data:/srv/jupyterhub
         - jupyterhub-user-data:/srv/jupyterhub/users
+        - /srv/jupyterhub/CIST1220:/srv/jupyterhub/CIST1220
 
   - name: Write Certbot command to file for future reference
     copy:
@@ -449,16 +469,16 @@
       content: |
         certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us
 
-  - name: Restart JupyterHub container
-    community.docker.docker_container:
-      name: jupyterhub
-      state: started
-      restart: yes
+  # - name: Restart JupyterHub container
+  #   community.docker.docker_container:
+  #     name: jupyterhub
+  #     state: started
+  #     restart: yes
 
-  - name: Reload Nginx
-    service:
-      name: nginx
-      state: reloaded
+  # - name: Reload Nginx
+  #   service:
+  #     name: nginx
+  #     state: reloaded
 
   - name: Start and enable Nginx
     service:

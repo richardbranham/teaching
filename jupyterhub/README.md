@@ -1,6 +1,7 @@
 
 docker stop jupyterhub; docker image rm classroom-notebook:latest jupyter/base-notebook:latest jupyterhub/jupyterhub:latest --force; docker rm jupyterhub jupyter-richardbranham --force
 
+docker stop jupyterhub jupyter-richardbranham; docker image rm classroom-notebook:latest jupyter/base-notebook:latest jupyterhub/jupyterhub:latest; docker rm -f jupyterhub jupyter-richardbranham
 
 docker volume rm jupyterhub-user-richardbranham
 
