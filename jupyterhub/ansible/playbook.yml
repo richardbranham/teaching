@@ -13,6 +13,7 @@
     polymagnum_password: "{{ lookup('ansible.builtin.password', '/home/richard-branham/.polymagnum_password', length=20, chars='  ascii_letters,digits') }}"
     password_reset_user: "rbranham@gwinnetttech.edu"
     password_reset_password: "ChangeMe1@"
+    
   tasks:
 
   - name: Install packages
@@ -290,30 +291,89 @@
         import os
         import shutil
         import logging
+        import pwd
+        import grp
         from nativeauthenticator import NativeAuthenticator
         from tornado import web
         from dockerspawner import DockerSpawner
 
         log = logging.getLogger("jupyterhub")
 
+        # uid = pwd.getpwnam("jovyan").pw_uid
+        # gid = grp.getgrnam("users").gr_gid
+        uid = 1000
+        gid = 100
+
         class GwinnettDockerSpawner(DockerSpawner):
 
-            async def start(self):
+          async def start(self):
 
-                storage_name = sanitize_username(self.user.name)
+              storage_name = sanitize_username(self.user.name)
 
-                self.volumes = {
-                    f"/srv/jupyterhub/users/{storage_name}":
-                        "/home/jovyan",
+              user_home = (
+                  f"/srv/jupyterhub/users/{storage_name}"
+              )
 
-                    "/srv/jupyterhub/CIST1220/midterm_files_master": {
-                        "bind":
-                            "/home/jovyan/CIST1220/midterm_files_master",
-                        "mode": "ro"
-                    }
-                }
+              working_copy = (
+                  f"{user_home}/CIST1220/midterm_files_working_copy"
+              )
 
-                return await super().start()
+              master_dir = (
+                  "/srv/jupyterhub/CIST1220/midterm_files_master"
+              )
+
+              os.makedirs(
+                  os.path.dirname(working_copy),
+                  exist_ok=True
+              )
+
+              #if not os.path.exists(working_copy):
+              if (
+                  not os.path.exists(working_copy)
+                  or len(os.listdir(working_copy)) == 0
+              ):
+
+                  shutil.copytree(
+                      master_dir,
+                      working_copy
+                  )
+
+                  for root, dirs, files in os.walk(working_copy):
+
+                      os.chown(root,1000,100)
+                      os.chmod(root,0o755)
+
+                      for d in dirs:
+                          path=os.path.join(root,d)
+                          os.chown(path,1000,100)
+                          os.chmod(path,0o755)
+
+                      for f in files:
+                          path=os.path.join(root,f)
+                          os.chown(path,1000,100)
+                          os.chmod(path,0o644)
+
+              self.volumes = {
+
+                  user_home:
+                      "/home/jovyan",
+
+                  master_dir: {
+                      "bind":
+                          "/home/jovyan/CIST1220/midterm_files_master",
+                      "mode":
+                          "ro"
+                  },
+
+                  working_copy: {
+                      "bind":
+                          "/home/jovyan/CIST1220/midterm_files_working_copy",
+                      "mode":
+                          "rw"
+                  }
+              }
+
+              return await super().start()
 
         def sanitize_username(username):
             return (
@@ -321,36 +381,6 @@
                 .replace("@", "_")
                 .replace(".", "-")
             )
-
-        def setup_user(spawner):
-            username = spawner.user.name
-            safe_username = sanitize_username(username)
-
-            spawner.environment["SAFE_USERNAME"] = safe_username
-
-            spawner.volumes = {
-                f"/srv/jupyterhub/users/{safe_username}": "/home/jovyan",
-                "/srv/jupyterhub/CIST1220/midterm_files_master": {
-                    "bind": "/home/jovyan/CIST1220/midterm_files_master",
-                    "mode": "ro"
-                }
-            }
-
-            source_dir = "/srv/jupyterhub/CIST1220/midterm_files_master"
-
-            user_home = f"/srv/jupyterhub/users/{safe_username}"
-
-            target_dir = (
-                f"{user_home}/CIST1220/"
-                f"midterm_files_{safe_username}"
-            )
-
-            os.makedirs(os.path.dirname(target_dir), exist_ok=True)
-
-            if not os.path.exists(target_dir):
-                shutil.copytree(source_dir, target_dir)
-
-        c.Spawner.pre_spawn_hook = setup_user
 
         class GwinnettTechAuthenticator(NativeAuthenticator):
 
@@ -481,7 +511,7 @@
         # }
 
         c.DockerSpawner.extra_create_kwargs = {
-            "user": "root"
+            "user": "1000:100"
         }
 
         c.DockerSpawner.environment = {
@@ -498,10 +528,6 @@
   - name: Create JupyterHub volume
     community.docker.docker_volume:
       name: jupyterhub-data
-
-  - name: Create user storage volume
-    community.docker.docker_volume:
-      name: jupyterhub-user-data
 
   - name: Write Nginx site config
     copy:
@@ -622,7 +648,7 @@
         - /var/run/docker.sock:/var/run/docker.sock
         - "{{ jupyterhub_dir }}/jupyterhub_config.py:/srv/jupyterhub/jupyterhub_config.py"
         - jupyterhub-data:/srv/jupyterhub
-        - jupyterhub-user-data:/srv/jupyterhub/users
+        - /srv/jupyterhub/users:/srv/jupyterhub/users
         - /srv/jupyterhub/CIST1220:/srv/jupyterhub/CIST1220
 
           # pip install --no-cache-dir dockerspawner oauthenticator jupyterhub-idle-culler &&
