@@ -11,7 +11,8 @@
     # github_client_secret: 1f60278438b2569326250439b9fed6e98f80c1b2
     # githubZZZ_callback_url: https://jhub.branham.us/hub/oauth_callback
     polymagnum_password: "{{ lookup('ansible.builtin.password', '/home/richard-branham/.polymagnum_password', length=20, chars='  ascii_letters,digits') }}"
-
+    password_reset_user: "rbranham@gwinnetttech.edu"
+    password_reset_password: "ChangeMe1@"
   tasks:
 
   - name: Install packages
@@ -253,6 +254,35 @@
       build:
         path: "{{ jupyterhub_dir }}"
 
+  - name: Deploy JupyterHub Dockerfile
+    copy:
+      dest: "{{ jupyterhub_dir }}/Dockerfile.jupyterhub"
+      content: |
+        FROM jupyterhub/jupyterhub:latest
+
+        USER root
+
+        RUN apt-get update && \
+            apt-get install -y \
+              sqlite3 \
+              vim \
+              curl && \
+            apt-get clean && \
+            rm -rf /var/lib/apt/lists/*
+
+        RUN pip install --no-cache-dir \
+            dockerspawner \
+            jupyterhub-nativeauthenticator \
+            jupyterhub-idle-culler
+
+  - name: Build custom JupyterHub image
+    community.docker.docker_image:
+      name: gtc-jupyterhub
+      source: build
+      build:
+        path: "{{ jupyterhub_dir }}"
+        dockerfile: Dockerfile.jupyterhub
+
   - name: Create JupyterHub config file
     copy:
       dest: "{{ jupyterhub_dir }}/jupyterhub_config.py"
@@ -261,56 +291,132 @@
         import shutil
         import logging
         from nativeauthenticator import NativeAuthenticator
+        from tornado import web
+        from dockerspawner import DockerSpawner
 
         log = logging.getLogger("jupyterhub")
 
-        # c.JupyterHub.authenticator_class = "oauthenticator.github.GitHubOAuthenticator"
-        c.JupyterHub.authenticator_class = NativeAuthenticator
-        # Allow users to create their own accounts
-        c.NativeAuthenticator.open_signup = True
+        class GwinnettDockerSpawner(DockerSpawner):
 
-        # Require admin approval of new accounts
-        c.NativeAuthenticator.ask_email_on_signup = True
+            async def start(self):
 
-        # Optional: require users to accept terms
-        c.NativeAuthenticator.tos = (
-            "This system is for Gwinnett Technical College students and faculty only."
-        )
+                storage_name = sanitize_username(self.user.name)
 
-        c.Authenticator.allow_all = True
-        c.Authenticator.admin_users = {"richard"}
+                self.volumes = {
+                    f"/srv/jupyterhub/users/{storage_name}":
+                        "/home/jovyan",
 
-        c.JupyterHub.spawner_class = "dockerspawner.DockerSpawner"
+                    "/srv/jupyterhub/CIST1220/midterm_files_master": {
+                        "bind":
+                            "/home/jovyan/CIST1220/midterm_files_master",
+                        "mode": "ro"
+                    }
+                }
 
-        def setup_midterm_files(spawner):
+                return await super().start()
+
+        def sanitize_username(username):
+            return (
+                username.lower()
+                .replace("@", "_")
+                .replace(".", "-")
+            )
+
+        def setup_user(spawner):
             username = spawner.user.name
+            safe_username = sanitize_username(username)
+
+            spawner.environment["SAFE_USERNAME"] = safe_username
+
+            spawner.volumes = {
+                f"/srv/jupyterhub/users/{safe_username}": "/home/jovyan",
+                "/srv/jupyterhub/CIST1220/midterm_files_master": {
+                    "bind": "/home/jovyan/CIST1220/midterm_files_master",
+                    "mode": "ro"
+                }
+            }
 
             source_dir = "/srv/jupyterhub/CIST1220/midterm_files_master"
 
-            user_home = f"{{ jupyterhub_user_storage_dir }}/{username}"
-            target_dir = f"{user_home}/CIST1220/midterm_files_{username}"
+            user_home = f"/srv/jupyterhub/users/{safe_username}"
+
+            target_dir = (
+                f"{user_home}/CIST1220/"
+                f"midterm_files_{safe_username}"
+            )
 
             os.makedirs(os.path.dirname(target_dir), exist_ok=True)
 
             if not os.path.exists(target_dir):
                 shutil.copytree(source_dir, target_dir)
-                os.chmod(target_dir, 755)
 
-                for root, dirs, files in os.walk(target_dir):
-                    os.chown(root, 1000, 100)
-                    os.chmod(root, 0o755)
+        c.Spawner.pre_spawn_hook = setup_user
 
-                    for d in dirs:
-                        os.chown(os.path.join(root, d), 1000, 100)
-                        os.chmod(os.path.join(root, d), 0o755)
+        class GwinnettTechAuthenticator(NativeAuthenticator):
 
-                    for f in files:
-                        os.chown(os.path.join(root, f), 1000, 100)
-                        os.chmod(os.path.join(root, f), 0o755)
+            def normalize_username(self, username):
+                return username.lower().strip()
 
-                print(f"Created project directory for {username}")
+            def validate_username(self, username):
+                username = username.lower().strip()
 
-        c.Spawner.pre_spawn_hook = setup_midterm_files
+                return username.endswith("@gwinnetttech.edu")
+
+        # c.JupyterHub.authenticator_class = "oauthenticator.github.GitHubOAuthenticator"
+        #c.JupyterHub.authenticator_class = NativeAuthenticator
+        c.JupyterHub.authenticator_class = GwinnettTechAuthenticator
+        # Allow users to create their own accounts
+        c.NativeAuthenticator.open_signup = True
+
+        # Require admin approval of new accounts
+        c.NativeAuthenticator.ask_email_on_signup = False
+
+        # Optional: require users to accept terms
+        c.NativeAuthenticator.tos = (
+            "I understand that this system is for Gwinnett Technical College students and faculty only.  I affirm that I am either an employee or a current student at Gwinnett Technical College, or I have been given explicit authorization to use this system."
+        )
+
+        c.Authenticator.allow_all = True
+        c.Authenticator.admin_users = {"rbranham@gwinnetttech.edu"}
+        #c.Authenticator.admin_users = set()
+
+        #c.JupyterHub.spawner_class = "dockerspawner.DockerSpawner"
+        c.JupyterHub.spawner_class = GwinnettDockerSpawner
+
+        # def setup_midterm_files(spawner):
+        #     username = spawner.user.name
+        #     storage_name = safe_username(username)
+
+        #     source_dir = "/srv/jupyterhub/CIST1220/midterm_files_master"
+
+        #     user_home = f"/srv/jupyterhub/users/{storage_name}"
+
+        #     target_dir = (
+        #         f"{user_home}/CIST1220/"
+        #         f"midterm_files_{storage_name}"
+        #     )
+
+        #     os.makedirs(os.path.dirname(target_dir), exist_ok=True)
+
+        #     if not os.path.exists(target_dir):
+        #         shutil.copytree(source_dir, target_dir)
+        #         os.chmod(target_dir, 755)
+
+        #         for root, dirs, files in os.walk(target_dir):
+        #             os.chown(root, 1000, 100)
+        #             os.chmod(root, 0o755)
+
+        #             for d in dirs:
+        #                 os.chown(os.path.join(root, d), 1000, 100)
+        #                 os.chmod(os.path.join(root, d), 0o755)
+
+        #             for f in files:
+        #                 os.chown(os.path.join(root, f), 1000, 100)
+        #                 os.chmod(os.path.join(root, f), 0o755)
+
+        #         print(f"Created project directory for {username}")
+
+        #c.Spawner.pre_spawn_hook = setup_midterm_files
 
         c.DockerSpawner.network_name = "jupyterhub-network"
         c.DockerSpawner.use_internal_ip = True
@@ -361,33 +467,32 @@
         # c.GitHubOAuthenticator.scope = ["read:user", "user:email"]
 
         c.Authenticator.allow_all = True
-        c.Authenticator.admin_users = {"richard"}
+        #c.Authenticator.admin_users = {"richard"}
         c.DockerSpawner.image = "{{ notebook_image }}"
         c.DockerSpawner.remove = False
         c.DockerSpawner.notebook_dir = "/home/jovyan"
 
-        c.DockerSpawner.volumes = {
-            "{{ jupyterhub_user_storage_dir }}/{username}": "/home/jovyan",
-            "/srv/jupyterhub/CIST1220/midterm_files_master": {
-                "bind": "/home/jovyan/CIST1220/midterm_files_master",
-                "mode": "rw"
-            }
-        }
+        # c.DockerSpawner.volumes = {
+        #     "/srv/jupyterhub/users/{username}": "/home/jovyan",
+        #     "/srv/jupyterhub/CIST1220/midterm_files_master": {
+        #         "bind": "/home/jovyan/CIST1220/midterm_files_master",
+        #         "mode": "ro"
+        #     }
+        # }
 
         c.DockerSpawner.extra_create_kwargs = {
             "user": "root"
         }
 
         c.DockerSpawner.environment = {
-            "CHOWN_HOME": "yes",
-            "CHOWN_HOME_OPTS": "-R",
+            "CHOWN_HOME": "no",
             "NB_UID": "1000",
             "NB_GID": "100",
             "JUPYTER_RUNTIME_DIR": "/tmp/jupyter-runtime",
             "JUPYTER_CONFIG_DIR": "/tmp/jupyter-config",
             "XDG_CACHE_HOME": "/tmp/xdg/cache",
             "XDG_DATA_HOME": "/tmp/xdg/data",
-            "XDG_STATE_HOME": "/tmp/xdg/state"
+            "XDG_STATE_HOME": "/tmp/xdg/state",
         }
 
   - name: Create JupyterHub volume
@@ -462,32 +567,69 @@
             #worker_connections 4096;
         }
 
+  - name: Install password reset utility
+    copy:
+      dest: /srv/jupyterhub/pw-reset.py
+      owner: root
+      group: root
+      mode: "0755"
+      content: |
+        from jupyterhub.orm import User, new_session_factory
+        from nativeauthenticator.orm import UserInfo
+        from nativeauthenticator.crypto import set_password
+
+        db = new_session_factory()()
+
+        username = "{{ password_reset_user }}"
+        password = "{{ password_reset_password }}"
+
+        user = User.find(db, name=username)
+
+        if not user:
+            raise Exception(f"User {username} not found")
+
+        userinfo = db.query(UserInfo).filter(
+            UserInfo.user_id == user.id
+        ).first()
+
+        if not userinfo:
+            raise Exception(f"UserInfo missing for {username}")
+
+        userinfo.password = set_password(password)
+
+        db.commit()
+
+        print(f"Password reset successfully for {username}")
+
   - name: Run JupyterHub container
     community.docker.docker_container:
       name: jupyterhub
-      image: jupyterhub/jupyterhub
+      image: gtc-jupyterhub
       restart_policy: unless-stopped
+
       published_ports:
         - "8000:8000"
+
       command:
-          # pip install --no-cache-dir dockerspawner oauthenticator jupyterhub-idle-culler &&
-        - /bin/sh
-        - -lc
-        - >-
-          pip install --no-cache-dir dockerspawner jupyterhub-nativeauthenticator jupyterhub-idle-culler &&          
-          jupyterhub -f /srv/jupyterhub/jupyterhub_config.py
-      # env:
-      #   GITHUB_CLIENT_ID: "{{ github_client_id }}"
-      #   GITHUB_CLIENT_SECRET: "{{ github_client_secret }}"
-      #   GITHUB_CALLBACK_URL: "{{ githubZZZ_callback_url }}"
+        - jupyterhub
+        - -f
+        - /srv/jupyterhub/jupyterhub_config.py
+
       networks:
         - name: jupyterhub-network
+
       volumes:
         - /var/run/docker.sock:/var/run/docker.sock
         - "{{ jupyterhub_dir }}/jupyterhub_config.py:/srv/jupyterhub/jupyterhub_config.py"
         - jupyterhub-data:/srv/jupyterhub
         - jupyterhub-user-data:/srv/jupyterhub/users
         - /srv/jupyterhub/CIST1220:/srv/jupyterhub/CIST1220
+
+          # pip install --no-cache-dir dockerspawner oauthenticator jupyterhub-idle-culler &&
+      # env:
+      #   GITHUB_CLIENT_ID: "{{ github_client_id }}"
+      #   GITHUB_CLIENT_SECRET: "{{ github_client_secret }}"
+      #   GITHUB_CALLBACK_URL: "{{ githubZZZ_callback_url }}"
 
   - name: Write Certbot command to file for future reference
     copy:
