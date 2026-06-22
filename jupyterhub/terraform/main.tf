@@ -2,10 +2,20 @@ data "digitalocean_ssh_key" "default" {
   name = "Richard"
 }
 
+variable "jupyterhubs" {
+  default = {
+    "01" = "nyc3"
+  }
+}
+
 resource "digitalocean_droplet" "jupyterhub" {
 
-  name   = "jupyterhub-01"
-  region = "nyc3"
+
+  for_each = var.jupyterhubs
+
+  name = "jupyterhub-${each.key}"
+
+  region = each.value
 
   size   = "s-1vcpu-2gb"
 
@@ -30,6 +40,10 @@ resource "digitalocean_droplet" "jupyterhub" {
   EOF
 }
 
+
 output "ip" {
-  value = digitalocean_droplet.jupyterhub.ipv4_address
+  value = {
+    for name, droplet in digitalocean_droplet.jupyterhub :
+    name => droplet.ipv4_address
+  }
 }
