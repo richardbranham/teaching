@@ -7,9 +7,9 @@
     jupyterhub_user_storage_dir: /srv/jupyterhub/users
     jupyterhub_venv_dir: /opt/jupyterhub-venv
     notebook_image: classroom-notebook
-    github_client_id: Ov23li5Rb7rHQHtQ9I5A
-    github_client_secret: 1f60278438b2569326250439b9fed6e98f80c1b2
-    github_callback_url: https://jhub.branham.us/hub/oauth_callback
+    # github_client_id: Ov23li5Rb7rHQHtQ9I5A
+    # github_client_secret: 1f60278438b2569326250439b9fed6e98f80c1b2
+    # githubZZZ_callback_url: https://jhub.branham.us/hub/oauth_callback
     polymagnum_password: "{{ lookup('ansible.builtin.password', '/home/richard-branham/.polymagnum_password', length=20, chars='  ascii_letters,digits') }}"
 
   tasks:
@@ -82,9 +82,16 @@
     ufw:
       state: enabled
 
-  - name: Install oauthenticator in virtual environment
+  # - name: Install oauthenticator in virtual environment
+  #   pip:
+  #     name: oauthenticator
+  #     state: present
+  #     virtualenv: "{{ jupyterhub_venv_dir }}"
+  #     virtualenv_command: python3 -m venv
+
+  - name: Install NativeAuthenticator in virtual environment
     pip:
-      name: oauthenticator
+      name: jupyterhub-nativeauthenticator
       state: present
       virtualenv: "{{ jupyterhub_venv_dir }}"
       virtualenv_command: python3 -m venv
@@ -253,10 +260,26 @@
         import os
         import shutil
         import logging
+        from nativeauthenticator import NativeAuthenticator
 
         log = logging.getLogger("jupyterhub")
 
-        c.JupyterHub.authenticator_class = "oauthenticator.github.GitHubOAuthenticator"
+        # c.JupyterHub.authenticator_class = "oauthenticator.github.GitHubOAuthenticator"
+        c.JupyterHub.authenticator_class = NativeAuthenticator
+        # Allow users to create their own accounts
+        c.NativeAuthenticator.open_signup = True
+
+        # Require admin approval of new accounts
+        c.NativeAuthenticator.ask_email_on_signup = True
+
+        # Optional: require users to accept terms
+        c.NativeAuthenticator.tos = (
+            "This system is for Gwinnett Technical College students and faculty only."
+        )
+
+        c.Authenticator.allow_all = True
+        c.Authenticator.admin_users = {"richard"}
+
         c.JupyterHub.spawner_class = "dockerspawner.DockerSpawner"
 
         def setup_midterm_files(spawner):
@@ -329,12 +352,14 @@
         c.JupyterHub.tornado_settings = {
             "max_header_size": 1048576,
         }
-        c.GitHubOAuthenticator.client_id = os.environ["GITHUB_CLIENT_ID"]
-        c.GitHubOAuthenticator.client_secret = os.environ["GITHUB_CLIENT_SECRET"]
-        c.GitHubOAuthenticator.oauth_callback_url = os.environ.get(
-            "GITHUB_CALLBACK_URL", "{{ github_callback_url }}"
-        )
-        c.GitHubOAuthenticator.scope = ["read:user", "user:email"]
+
+        # c.GitHubOAuthenticator.client_id = os.environ["GITHUB_CLIENT_ID"]
+        # c.GitHubOAuthenticator.client_secret = os.environ["GITHUB_CLIENT_SECRET"]
+        # c.GitHubOAuthenticator.oauth_callback_url = os.environ.get(
+        #     "GITHUB_CALLBACK_URL", "{Z{ githubZZZ_callback_url }Z}"  #  When this line is commented out, the brackets must be broken up or a playbook error will occur.
+        # )
+        # c.GitHubOAuthenticator.scope = ["read:user", "user:email"]
+
         c.Authenticator.allow_all = True
         c.Authenticator.admin_users = {"richard"}
         c.DockerSpawner.image = "{{ notebook_image }}"
@@ -445,15 +470,16 @@
       published_ports:
         - "8000:8000"
       command:
+          # pip install --no-cache-dir dockerspawner oauthenticator jupyterhub-idle-culler &&
         - /bin/sh
         - -lc
         - >-
-          pip install --no-cache-dir dockerspawner oauthenticator jupyterhub-idle-culler &&
+          pip install --no-cache-dir dockerspawner jupyterhub-nativeauthenticator jupyterhub-idle-culler &&          
           jupyterhub -f /srv/jupyterhub/jupyterhub_config.py
-      env:
-        GITHUB_CLIENT_ID: "{{ github_client_id }}"
-        GITHUB_CLIENT_SECRET: "{{ github_client_secret }}"
-        GITHUB_CALLBACK_URL: "{{ github_callback_url }}"
+      # env:
+      #   GITHUB_CLIENT_ID: "{{ github_client_id }}"
+      #   GITHUB_CLIENT_SECRET: "{{ github_client_secret }}"
+      #   GITHUB_CALLBACK_URL: "{{ githubZZZ_callback_url }}"
       networks:
         - name: jupyterhub-network
       volumes:
