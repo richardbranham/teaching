@@ -7,12 +7,7 @@
     jupyterhub_user_storage_dir: /srv/jupyterhub/users
     jupyterhub_venv_dir: /opt/jupyterhub-venv
     notebook_image: classroom-notebook
-    # github_client_id: Ov23li5Rb7rHQHtQ9I5A
-    # github_client_secret: 1f60278438b2569326250439b9fed6e98f80c1b2
-    # githubZZZ_callback_url: https://jhub.branham.us/hub/oauth_callback
     polymagnum_password: "{{ lookup('ansible.builtin.password', '/home/richard-branham/.polymagnum_password', length=20, chars='  ascii_letters,digits') }}"
-    password_reset_user: "rbranham@gwinnetttech.edu"
-    password_reset_password: "ChangeMe1@"
     
   tasks:
 
@@ -83,13 +78,6 @@
   - name: Enable UFW
     ufw:
       state: enabled
-
-  # - name: Install oauthenticator in virtual environment
-  #   pip:
-  #     name: oauthenticator
-  #     state: present
-  #     virtualenv: "{{ jupyterhub_venv_dir }}"
-  #     virtualenv_command: python3 -m venv
 
   - name: Install NativeAuthenticator in virtual environment
     pip:
@@ -193,123 +181,6 @@
       find /srv/jupyterhub/CIST1220/midterm_files_master -type d -exec chmod 0555 {} +
       find /srv/jupyterhub/CIST1220/midterm_files_master -type f -exec chmod 0444 {} +
     changed_when: true
-      
-  - name: Deploy Flask password admin
-    copy:
-      dest: "{{ jupyterhub_dir }}/password_admin.py"
-      mode: "0755"
-      content: |
-        from flask import Flask, request, render_template_string
-        import sqlite3
-        import bcrypt
-        import logging
-        from tornado.log import app_log
-        from datetime import datetime
-
-        def write_log(filename: str, text: str) -> None:
-            """
-            Append a timestamped message to a log file.
-
-            Args:
-                filename: Path to the log file.
-                text: Message to write.
-            """
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            with open(filename, "a", encoding="utf-8") as f:
-                f.write(f"[{timestamp}] {text}\n")
-
-        write_log("/tmp/password_admin.log", "Password admin initialized.")
-
-        app = Flask(__name__)
-
-        DB="/srv/jupyterhub/jupyterhub.sqlite"
-
-        # rbranham-test@student.gwinnetttech.edu
-        app_log.info("Accessing password reset page")
-
-        HTML="""
-        {% raw %}
-        <h2>JupyterHub Password Reset</h2>
-
-        <form method="post">
-            Username:<br>
-            <input name="username" size="50"><br><br>
-
-            New Password:<br>
-            <input name="password" size="50"><br><br>
-
-            <input type="submit" value="Reset Password">
-        </form>
-
-        {% if message %}
-        <hr>
-        <b>{{ message }}</b>
-        {% endif %}
-        {% endraw %}
-        """
-
-        @app.route("/", methods=["GET","POST"])
-        def index():
-            app_log.info("password reset default route.")
-            write_log("/tmp/password_admin.log", "password index function")
-
-            message=""
-
-            if request.method == "POST":
-
-                username=request.form["username"].strip().lower()
-                password=request.form["password"]
-
-                hashed=bcrypt.hashpw(
-                    password.encode(),
-                    bcrypt.gensalt()
-                ).decode()
-
-                conn=sqlite3.connect(DB)
-                cur=conn.cursor()
-
-                write_log("/tmp/password_admin.log", f"UPDATE users_info SET password={hashed} WHERE username={username}")
-
-                cur.execute("""
-                    UPDATE users_info
-                    SET password=?
-                    WHERE username=?
-                """,(hashed,username))
-
-                conn.commit()
-
-                write_log("/tmp/password_admin.log", f"Password update attempted for {username}")
-                write_log("/tmp/password_admin.log", f"cursor: {cur}")
-
-                if cur.rowcount:
-                    message=f"Password updated for {username}"
-                else:
-                    message=f"User not found: {username}"
-
-                conn.close()
-
-            return render_template_string(
-                HTML,
-                message=message
-            )
-
-        app.run(
-            host="0.0.0.0",
-            port=8888
-        )
-
-  - name: Deploy container startup script
-    copy:
-      dest: "{{ jupyterhub_dir }}/start-jhub.sh"
-      mode: "0755"
-      content: |
-        #!/bin/bash
-
-        python3 /srv/jupyterhub/password_admin.py &
-
-        exec jupyterhub \
-          -f /srv/jupyterhub/jupyterhub_config.py
 
   - name: Deploy Dockerfile
     copy:
@@ -396,7 +267,8 @@
             jupyterhub-nativeauthenticator \
             jupyterhub-idle-culler \
             flask \
-            bcrypt
+            bcrypt \
+            requests
 
   - name: Build custom JupyterHub image
     community.docker.docker_image:
@@ -422,8 +294,6 @@
 
         log = logging.getLogger("jupyterhub")
 
-        # uid = pwd.getpwnam("jovyan").pw_uid
-        # gid = grp.getgrnam("users").gr_gid
         uid = 1000
         gid = 100
 
@@ -540,16 +410,11 @@
         }
 
         c.JupyterHub.log_level = "INFO"
-        # c.JupyterHub.authenticator_class = "oauthenticator.github.GitHubOAuthenticator"
-        #c.JupyterHub.authenticator_class = NativeAuthenticator
         c.JupyterHub.authenticator_class = GwinnettTechAuthenticator
-        # Allow users to create their own accounts
         c.NativeAuthenticator.open_signup = True
 
-        # Require admin approval of new accounts
         c.NativeAuthenticator.ask_email_on_signup = False
 
-        # Optional: require users to accept terms
         c.NativeAuthenticator.tos = (
             "I understand that this system is for Gwinnett Technical College students and faculty only.  I affirm that I am either an employee or a current student at Gwinnett Technical College, or I have been given explicit authorization to use this system."
         )
@@ -558,7 +423,6 @@
         c.NativeAuthenticator.check_common_password = True
         c.Authenticator.allow_all = True
         c.Authenticator.admin_users = {"rbranham@gwinnetttech.edu"}
-        #c.Authenticator.admin_users = set()
 
         c.NativeAuthenticator.tos = """
           This system is for Gwinnett Technical College students, faculty, and explicitly authorized users.
@@ -568,43 +432,7 @@
           Password resets will assign a temporary password that must be changed immediately.
           """
 
-        #c.JupyterHub.spawner_class = "dockerspawner.DockerSpawner"
         c.JupyterHub.spawner_class = GwinnettDockerSpawner
-
-        # def setup_midterm_files(spawner):
-        #     username = spawner.user.name
-        #     storage_name = safe_username(username)
-
-        #     source_dir = "/srv/jupyterhub/CIST1220/midterm_files_master"
-
-        #     user_home = f"/srv/jupyterhub/users/{storage_name}"
-
-        #     target_dir = (
-        #         f"{user_home}/CIST1220/"
-        #         f"midterm_files_{storage_name}"
-        #     )
-
-        #     os.makedirs(os.path.dirname(target_dir), exist_ok=True)
-
-        #     if not os.path.exists(target_dir):
-        #         shutil.copytree(source_dir, target_dir)
-        #         os.chmod(target_dir, 755)
-
-        #         for root, dirs, files in os.walk(target_dir):
-        #             os.chown(root, 1000, 100)
-        #             os.chmod(root, 0o755)
-
-        #             for d in dirs:
-        #                 os.chown(os.path.join(root, d), 1000, 100)
-        #                 os.chmod(os.path.join(root, d), 0o755)
-
-        #             for f in files:
-        #                 os.chown(os.path.join(root, f), 1000, 100)
-        #                 os.chmod(os.path.join(root, f), 0o755)
-
-        #         print(f"Created project directory for {username}")
-
-        #c.Spawner.pre_spawn_hook = setup_midterm_files
 
         c.DockerSpawner.network_name = "jupyterhub-network"
         c.DockerSpawner.use_internal_ip = True
@@ -649,26 +477,10 @@
             "max_header_size": 1048576,
         }
 
-        # c.GitHubOAuthenticator.client_id = os.environ["GITHUB_CLIENT_ID"]
-        # c.GitHubOAuthenticator.client_secret = os.environ["GITHUB_CLIENT_SECRET"]
-        # c.GitHubOAuthenticator.oauth_callback_url = os.environ.get(
-        #     "GITHUB_CALLBACK_URL", "{Z{ githubZZZ_callback_url }Z}"  #  When this line is commented out, the brackets must be broken up or a playbook error will occur.
-        # )
-        # c.GitHubOAuthenticator.scope = ["read:user", "user:email"]
-
         c.Authenticator.allow_all = True
-        #c.Authenticator.admin_users = {"richard"}
         c.DockerSpawner.image = "{{ notebook_image }}"
         c.DockerSpawner.remove = False
         c.DockerSpawner.notebook_dir = "/home/jovyan"
-
-        # c.DockerSpawner.volumes = {
-        #     "/srv/jupyterhub/users/{username}": "/home/jovyan",
-        #     "/srv/jupyterhub/CIST1220/midterm_files_master": {
-        #         "bind": "/home/jovyan/CIST1220/midterm_files_master",
-        #         "mode": "ro"
-        #     }
-        # }
 
         c.DockerSpawner.extra_create_kwargs = {
             "user": "1000:100"
@@ -725,10 +537,6 @@
                 proxy_set_header Upgrade $http_upgrade;
                 proxy_set_header Connection "upgrade";
             }
-
-            location /password-admin/ {
-                proxy_pass http://127.0.0.1:8888/;
-            }
         }
 
   - name: Enable Nginx site
@@ -754,50 +562,6 @@
             #worker_connections 4096;
         #}
 
-  - name: Install password reset utility
-    copy:
-      dest: /srv/jupyterhub/pw-reset.py
-      owner: root
-      group: root
-      mode: "0755"
-      content: |
-        import bcrypt
-        from jupyterhub.orm import User
-        from jupyterhub.app import JupyterHub
-        from nativeauthenticator.orm import UserInfo
-
-        username = "{{ password_reset_user }}"
-        temp_password = "{{ password_reset_password }}"
-
-        hashed = bcrypt.hashpw(
-            temp_password.encode("utf-8"),
-            bcrypt.gensalt()
-        ).decode("utf-8")
-
-        app = JupyterHub()
-        db = app.session_factory()
-
-        user = User.find(db, name=username)
-        if not user:
-            raise Exception(f"User not found: {username}")
-
-        userinfo = user.userinfo
-
-        if not userinfo:
-            raise Exception("UserInfo missing")
-
-        # set password
-        userinfo.password = hashed
-
-        # 🔥 FORCE PASSWORD CHANGE FLAG
-        userinfo.is_must_change_password = True  # we create this logical flag
-
-        db.commit()
-
-        print(f"Temporary password set for {username}")
-        print("User must change password on next login")
-
-
   - name: Run JupyterHub container
     community.docker.docker_container:
       name: jupyterhub
@@ -808,13 +572,6 @@
         - "8000:8000"
         - "8888:8888"
 
-      command:
-        - /bin/bash
-        - /srv/jupyterhub/start-jhub.sh
-        # - jupyterhub
-        # - -f
-        # - /srv/jupyterhub/jupyterhub_config.py
-
       networks:
         - name: jupyterhub-network
 
@@ -824,19 +581,7 @@
         - jupyterhub-data:/srv/jupyterhub
         - /srv/jupyterhub/users:/srv/jupyterhub/users
         - /srv/jupyterhub/CIST1220:/srv/jupyterhub/CIST1220
-        - /srv/jupyterhub/pw-reset.py:/srv/jupyterhub/pw-reset.py
-        - "{{ jupyterhub_dir }}/password_admin.py:/srv/jupyterhub/password_admin.py"
-        - "{{ jupyterhub_dir }}/start-jhub.sh:/srv/jupyterhub/start-jhub.sh"
 
-  - name: Install reset-password command
-    copy:
-      dest: /usr/local/bin/reset-jhub-password
-      mode: "0755"
-      content: |
-        #!/bin/bash
-        docker exec jupyterhub \
-          python3 /srv/jupyterhub/pw-reset.py "$1"
-        
   - name: Write Certbot command to file for future reference
     copy:
       dest: /root/jhub-cert.txt
