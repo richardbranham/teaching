@@ -182,6 +182,163 @@
       find /srv/jupyterhub/CIST1220/midterm_files_master -type f -exec chmod 0444 {} +
     changed_when: true
 
+  - name: Deploy JupyterHub password admin service
+    copy:
+      dest: /srv/jupyterhub/password_admin_service.py
+      owner: root
+      group: root
+      mode: "0755"
+      content: |
+        from flask import Flask, request, render_template_string, abort
+        import requests
+        import sqlite3
+        import bcrypt
+        from jupyterhub.services.auth import HubOAuth
+        from tornado.escape import json_decode
+        import os
+
+        app = Flask(__name__)
+
+        oauth = HubOAuth(
+            api_token=os.environ.get("JUPYTERHUB_API_TOKEN"),
+            oauth_client_id=os.environ.get("JUPYTERHUB_CLIENT_ID"),
+        )
+
+        print("client_id =", oauth._client_id)
+        print("api_url   =", oauth.api_url)
+        print("base_url  =", oauth.base_url)
+
+        DB = "/srv/jupyterhub/jupyterhub.sqlite"
+
+        HTML = """
+        {% raw %}
+        <h2>JupyterHub Password Reset</h2>
+
+        <form method="post">
+            Username:<br>
+            <input name="username" size="50"><br><br>
+
+            Temporary Password:<br>
+            <input name="password" size="50"><br><br>
+
+            <input type="submit" value="Reset Password">
+        </form>
+
+        {% if message %}
+        <hr>
+        <b>{{ message }}</b>
+        {% endif %}
+        {% endraw %}
+        """
+
+        HUB_API = "http://127.0.0.1:8081/hub/api"
+
+        def get_current_user():
+
+            token = os.environ.get("JUPYTERHUB_API_TOKEN")
+
+            if not token:
+                print("No service API token found")
+                return None
+
+            r = requests.get(
+                "http://jupyterhub:8081/hub/api/user",
+                headers={
+                    "Authorization": f"token {token}"
+                }
+            )
+
+            print("API status:", r.status_code)
+            print("API response:", r.text)
+
+            if r.status_code != 200:
+                return None
+
+            return r.json()
+
+        def require_admin():
+
+            print("headers =", dict(request.headers))
+
+            user = get_current_user()
+
+            if not user:
+                abort(403)
+
+            if "admin" not in user:
+                abort(403)
+
+            if not user["admin"]:
+                abort(403)
+
+            return user
+
+        @app.route("/", methods=["GET", "POST"])
+        @app.route("/services/password-admin/", methods=["GET", "POST"])
+        def index():
+
+            print("ENV")
+            for k,v in os.environ.items():
+                if k.startswith("JUPYTERHUB"):
+                    print(k, "=", v)
+
+            print("HEADERS")
+            for k,v in request.headers.items():
+                print(k, "=", v)
+
+                
+            print(dict(request.headers), flush=True)
+
+            require_admin()
+
+            message = ""
+
+            if request.method == "POST":
+
+                username = request.form["username"].strip().lower()
+                password = request.form["password"]
+
+                hashed = bcrypt.hashpw(
+                    password.encode(),
+                    bcrypt.gensalt()
+                ).decode()
+
+                conn = sqlite3.connect(DB)
+                cur = conn.cursor()
+
+                cur.execute(
+                    """
+                    UPDATE users_info
+                      SET password=?
+                    WHERE username=?
+                    """,
+                    (hashed, username)
+                )
+
+                conn.commit()
+
+                if cur.rowcount:
+                    message = f"Password updated for {username}"
+                else:
+                    message = f"User not found: {username}"
+
+                conn.close()
+
+            return render_template_string(
+                HTML,
+                message=message
+            )
+
+        @app.route("/oauth_callback")
+        def oauth_callback():
+            return "OAuth callback received"
+
+        if __name__ == "__main__":
+            app.run(
+                host="0.0.0.0",
+                port=8888
+            )
+
   - name: Deploy Dockerfile
     copy:
       dest: "{{ jupyterhub_dir }}/Dockerfile"
@@ -266,9 +423,11 @@
             dockerspawner \
             jupyterhub-nativeauthenticator \
             jupyterhub-idle-culler \
-            flask \
             bcrypt \
-            requests
+            flask \
+            flask-dance \
+            requests \
+            jupyterhub
 
   - name: Build custom JupyterHub image
     community.docker.docker_image:
@@ -400,13 +559,12 @@
                         "Password change required"
                     )
                     
-                    
             def post_save_password(self, userinfo):
                 userinfo.is_must_change_password = False
 
         c.JupyterHub.template_vars = {
             "login_notice": "First login requires changing your temporary password.",
-            "password_admin_url": "/password-admin/"
+            "password_admin_url": "/services/password-admin/"
         }
 
         c.JupyterHub.log_level = "INFO"
@@ -449,6 +607,16 @@
 
         c.JupyterHub.services = [
           {
+              "name": "password-admin",
+              "url": "http://127.0.0.1:8888",
+              "command": [
+                  "python3",
+                  "/srv/jupyterhub/password_admin_service.py"
+              ],
+              "oauth_no_confirm": True,
+              "oauth_redirect_uri": "https://jhub.branham.us/services/password-admin/oauth_callback",
+          },
+          {
               "name": "idle-culler",
               "command": [
                   "python3",
@@ -461,7 +629,24 @@
         ]        
 
         c.JupyterHub.load_roles = [
-          {
+              {
+                  "name": "password-admin-service",
+                  "services": ["password-admin"],
+                  "scopes": [
+                      "access:services",
+                      "read:users:name"
+                  ],
+              },
+              {
+                  "name": "password-admin-access",
+                  "users": [
+                      "rbranham@gwinnetttech.edu"
+                  ],
+                  "scopes": [
+                      "access:services!service=password-admin"
+                  ],
+              },
+              {
               "name": "idle-culler",
               "services": ["idle-culler"],
               "scopes": [
@@ -570,7 +755,6 @@
 
       published_ports:
         - "8000:8000"
-        - "8888:8888"
 
       networks:
         - name: jupyterhub-network
@@ -581,6 +765,7 @@
         - jupyterhub-data:/srv/jupyterhub
         - /srv/jupyterhub/users:/srv/jupyterhub/users
         - /srv/jupyterhub/CIST1220:/srv/jupyterhub/CIST1220
+        - /srv/jupyterhub/password_admin_service.py:/srv/jupyterhub/password_admin_service.py
 
   - name: Write Certbot command to file for future reference
     copy:
