@@ -194,6 +194,123 @@
       find /srv/jupyterhub/CIST1220/midterm_files_master -type f -exec chmod 0444 {} +
     changed_when: true
       
+  - name: Deploy Flask password admin
+    copy:
+      dest: "{{ jupyterhub_dir }}/password_admin.py"
+      mode: "0755"
+      content: |
+        from flask import Flask, request, render_template_string
+        import sqlite3
+        import bcrypt
+        import logging
+        from tornado.log import app_log
+        from datetime import datetime
+
+        def write_log(filename: str, text: str) -> None:
+            """
+            Append a timestamped message to a log file.
+
+            Args:
+                filename: Path to the log file.
+                text: Message to write.
+            """
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            with open(filename, "a", encoding="utf-8") as f:
+                f.write(f"[{timestamp}] {text}\n")
+
+        write_log("/tmp/password_admin.log", "Password admin initialized.")
+
+        app = Flask(__name__)
+
+        DB="/srv/jupyterhub/jupyterhub.sqlite"
+
+        # rbranham-test@student.gwinnetttech.edu
+        app_log.info("Accessing password reset page")
+
+        HTML="""
+        {% raw %}
+        <h2>JupyterHub Password Reset</h2>
+
+        <form method="post">
+            Username:<br>
+            <input name="username" size="50"><br><br>
+
+            New Password:<br>
+            <input name="password" size="50"><br><br>
+
+            <input type="submit" value="Reset Password">
+        </form>
+
+        {% if message %}
+        <hr>
+        <b>{{ message }}</b>
+        {% endif %}
+        {% endraw %}
+        """
+
+        @app.route("/", methods=["GET","POST"])
+        def index():
+            app_log.info("password reset default route.")
+            write_log("/tmp/password_admin.log", "password index function")
+
+            message=""
+
+            if request.method == "POST":
+
+                username=request.form["username"].strip().lower()
+                password=request.form["password"]
+
+                hashed=bcrypt.hashpw(
+                    password.encode(),
+                    bcrypt.gensalt()
+                ).decode()
+
+                conn=sqlite3.connect(DB)
+                cur=conn.cursor()
+
+                write_log("/tmp/password_admin.log", f"UPDATE users_info SET password={hashed} WHERE username={username}")
+
+                cur.execute("""
+                    UPDATE users_info
+                    SET password=?
+                    WHERE username=?
+                """,(hashed,username))
+
+                conn.commit()
+
+                write_log("/tmp/password_admin.log", f"Password update attempted for {username}")
+                write_log("/tmp/password_admin.log", f"cursor: {cur}")
+
+                if cur.rowcount:
+                    message=f"Password updated for {username}"
+                else:
+                    message=f"User not found: {username}"
+
+                conn.close()
+
+            return render_template_string(
+                HTML,
+                message=message
+            )
+
+        app.run(
+            host="0.0.0.0",
+            port=8888
+        )
+
+  - name: Deploy container startup script
+    copy:
+      dest: "{{ jupyterhub_dir }}/start-jhub.sh"
+      mode: "0755"
+      content: |
+        #!/bin/bash
+
+        python3 /srv/jupyterhub/password_admin.py &
+
+        exec jupyterhub \
+          -f /srv/jupyterhub/jupyterhub_config.py
+
   - name: Deploy Dockerfile
     copy:
       dest: "{{ jupyterhub_dir }}/Dockerfile"
@@ -203,7 +320,7 @@
         USER root
 
         RUN apt-get update && \
-          apt-get install -y sqlite3 vim curl && \
+          apt-get install -y sqlite3 vim curl less iproute2 net-tools && \
           apt-get clean && \
           rm -rf /var/lib/apt/lists/*
 
@@ -267,6 +384,9 @@
             apt-get install -y \
               sqlite3 \
               vim \
+              less \
+              iproute2 \
+              net-tools \
               curl && \
             apt-get clean && \
             rm -rf /var/lib/apt/lists/*
@@ -274,7 +394,9 @@
         RUN pip install --no-cache-dir \
             dockerspawner \
             jupyterhub-nativeauthenticator \
-            jupyterhub-idle-culler
+            jupyterhub-idle-culler \
+            flask \
+            bcrypt
 
   - name: Build custom JupyterHub image
     community.docker.docker_image:
@@ -413,9 +535,11 @@
                 userinfo.is_must_change_password = False
 
         c.JupyterHub.template_vars = {
-            "login_notice": "First login requires changing your temporary password."
+            "login_notice": "First login requires changing your temporary password.",
+            "password_admin_url": "/password-admin/"
         }
 
+        c.JupyterHub.log_level = "INFO"
         # c.JupyterHub.authenticator_class = "oauthenticator.github.GitHubOAuthenticator"
         #c.JupyterHub.authenticator_class = NativeAuthenticator
         c.JupyterHub.authenticator_class = GwinnettTechAuthenticator
@@ -601,6 +725,10 @@
                 proxy_set_header Upgrade $http_upgrade;
                 proxy_set_header Connection "upgrade";
             }
+
+            location /password-admin/ {
+                proxy_pass http://127.0.0.1:8888/;
+            }
         }
 
   - name: Enable Nginx site
@@ -622,9 +750,9 @@
         #worker_processes auto;
         #worker_rlimit_nofile 65535;
 
-        events {
+        #events {
             #worker_connections 4096;
-        }
+        #}
 
   - name: Install password reset utility
     copy:
@@ -678,11 +806,14 @@
 
       published_ports:
         - "8000:8000"
+        - "8888:8888"
 
       command:
-        - jupyterhub
-        - -f
-        - /srv/jupyterhub/jupyterhub_config.py
+        - /bin/bash
+        - /srv/jupyterhub/start-jhub.sh
+        # - jupyterhub
+        # - -f
+        # - /srv/jupyterhub/jupyterhub_config.py
 
       networks:
         - name: jupyterhub-network
@@ -694,12 +825,8 @@
         - /srv/jupyterhub/users:/srv/jupyterhub/users
         - /srv/jupyterhub/CIST1220:/srv/jupyterhub/CIST1220
         - /srv/jupyterhub/pw-reset.py:/srv/jupyterhub/pw-reset.py
-
-          # pip install --no-cache-dir dockerspawner oauthenticator jupyterhub-idle-culler &&
-      # env:
-      #   GITHUB_CLIENT_ID: "{{ github_client_id }}"
-      #   GITHUB_CLIENT_SECRET: "{{ github_client_secret }}"
-      #   GITHUB_CALLBACK_URL: "{{ githubZZZ_callback_url }}"
+        - "{{ jupyterhub_dir }}/password_admin.py:/srv/jupyterhub/password_admin.py"
+        - "{{ jupyterhub_dir }}/start-jhub.sh:/srv/jupyterhub/start-jhub.sh"
 
   - name: Install reset-password command
     copy:
@@ -716,22 +843,22 @@
       content: |
         certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us
 
-  # - name: Restart JupyterHub container
-  #   community.docker.docker_container:
-  #     name: jupyterhub
-  #     state: started
-  #     restart: yes
-
-  # - name: Reload Nginx
-  #   service:
-  #     name: nginx
-  #     state: reloaded
+  - name: Restart JupyterHub container
+    community.docker.docker_container:
+      name: jupyterhub
+      state: started
+      restart: yes
 
   - name: Start and enable Nginx
     service:
       name: nginx
       state: started
       enabled: yes
+
+  - name: Reload Nginx
+    service:
+      name: nginx
+      state: reloaded
 
   - name: Display generated password
     debug:
