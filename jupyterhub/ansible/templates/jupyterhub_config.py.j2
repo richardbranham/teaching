@@ -192,6 +192,7 @@ c.JupyterHub.trust_xheaders = True
 c.JupyterHub.services = [
   {
       "name": "idle-culler",
+      "api_token": "idle-culler-fixed-api-token",
       "command": [
           "python3",
           "-m",
