@@ -84,11 +84,9 @@ class GwinnettDockerSpawner(DockerSpawner):
 
       result = await super().start()
 
-      container = self.client.containers.get(self.container_id)
-      hostname = container.attrs["Config"]["Hostname"]
       log.info(
           f"User '{self.user.name}' container started: "
-          f"name='{self.name}' hostname='{hostname}'"
+          f"name='{self.name}' id='{self.container_id}'"
       )
 
       return result
