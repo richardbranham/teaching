@@ -222,13 +222,14 @@
             fi\n\
             \n\
             # Redirect all container output to a log file on the host\n\
-            if [ -d "/var/log/jupyter" ] && [ -w "/var/log/jupyter" ]; then\n\
-                exec > >(tee -a /var/log/jupyter/output.log) 2>&1\n\
+            log_dir="/home/jovyan/.container_logs"\n\
+            if [ -d "$log_dir" ] && [ -w "$log_dir" ]; then\n\
+                exec > >(tee -a "$log_dir/output.log") 2>&1\n\
             fi\n\
             \n\
             # Configure kernel-level logging\n\
-            if [ -d "/var/log/jupyter" ] && [ -w "/var/log/jupyter" ]; then\n\
-                echo "c.IPythonKernelApp.log_file = '"'"'/var/log/jupyter/kernel.log'"'"'" > "${JUPYTER_CONFIG_DIR}/jupyter_kernel_config.py"\n\
+            if [ -d "$log_dir" ] && [ -w "$log_dir" ]; then\n\
+                echo "c.IPythonKernelApp.log_file = '"'"'"$log_dir/kernel.log"'"'"'" > "${JUPYTER_CONFIG_DIR}/jupyter_kernel_config.py"\n\
             fi' > /usr/local/bin/before-notebook.d/sync_midterm.sh && \
             chmod +x /usr/local/bin/before-notebook.d/sync_midterm.sh
 

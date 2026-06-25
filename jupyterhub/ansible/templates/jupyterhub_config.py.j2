@@ -23,8 +23,8 @@ class GwinnettDockerSpawner(DockerSpawner):
           f"/srv/jupyterhub/users/{storage_name}"
       )
 
-      log_dir = (
-          f"/srv/jupyterhub/users/{storage_name}/logs"
+      container_log_dir = (
+          f"/srv/jupyterhub/users/{storage_name}/.container_logs"
       )
 
       working_copy = (
@@ -41,10 +41,10 @@ class GwinnettDockerSpawner(DockerSpawner):
       )
 
       os.makedirs(
-          log_dir,
+          container_log_dir,
           exist_ok=True
       )
-      os.chown(log_dir, uid, gid)
+      os.chown(container_log_dir, uid, gid)
 
       #if not os.path.exists(working_copy):
       if (
@@ -89,18 +89,11 @@ class GwinnettDockerSpawner(DockerSpawner):
                   "/home/jovyan/CIST1220/midterm_files_working_copy",
               "mode":
                   "rw"
-          },
-
-          log_dir: {
-              "bind":
-                  "/var/log/jupyter",
-              "mode":
-                  "rw"
           }
       }
 
       self.args = (self.args or []) + [
-          f"--ServerApp.log_file=/var/log/jupyter/jupyter.log"
+          f"--ServerApp.log_file=/home/jovyan/.container_logs/jupyter.log"
       ]
 
       result = await super().start()
