@@ -17,11 +17,6 @@ class GwinnettDockerSpawner(DockerSpawner):
 
   async def start(self):
 
-      log.info(
-          f"User '{self.user.name}' spawning container '{self.name}'"
-          f" (image={self.image})"
-      )
-
       storage_name = sanitize_username(self.user.name)
 
       user_home = (
@@ -87,7 +82,16 @@ class GwinnettDockerSpawner(DockerSpawner):
           }
       }
 
-      return await super().start()
+      result = await super().start()
+
+      container = self.client.containers.get(self.container_id)
+      hostname = container.attrs["Config"]["Hostname"]
+      log.info(
+          f"User '{self.user.name}' container started: "
+          f"name='{self.name}' hostname='{hostname}'"
+      )
+
+      return result
 
 def sanitize_username(username):
     return (
