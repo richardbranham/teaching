@@ -17,10 +17,14 @@ class GwinnettDockerSpawner(DockerSpawner):
 
   async def start(self):
 
-      storage_name = sanitize_username(self.user.name)
+      storage_name = self.user.escaped_name
 
       user_home = (
           f"/srv/jupyterhub/users/{storage_name}"
+      )
+
+      log_dir = (
+          f"/srv/jupyterhub/users/{storage_name}/logs"
       )
 
       working_copy = (
@@ -35,6 +39,12 @@ class GwinnettDockerSpawner(DockerSpawner):
           os.path.dirname(working_copy),
           exist_ok=True
       )
+
+      os.makedirs(
+          log_dir,
+          exist_ok=True
+      )
+      os.chown(log_dir, uid, gid)
 
       #if not os.path.exists(working_copy):
       if (
@@ -79,8 +89,19 @@ class GwinnettDockerSpawner(DockerSpawner):
                   "/home/jovyan/CIST1220/midterm_files_working_copy",
               "mode":
                   "rw"
+          },
+
+          log_dir: {
+              "bind":
+                  "/var/log/jupyter",
+              "mode":
+                  "rw"
           }
       }
+
+      self.args = (self.args or []) + [
+          f"--ServerApp.log_file=/var/log/jupyter/jupyter.log"
+      ]
 
       result = await super().start()
 
@@ -90,13 +111,6 @@ class GwinnettDockerSpawner(DockerSpawner):
       )
 
       return result
-
-def sanitize_username(username):
-    return (
-        username.lower()
-        .replace("@", "_")
-        .replace(".", "-")
-    )
 
 class GwinnettTechAuthenticator(NativeAuthenticator):
 
