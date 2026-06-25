@@ -221,7 +221,8 @@ c.JupyterHub.tornado_settings = {
 
 c.Authenticator.allow_all = True
 c.DockerSpawner.image = "{{ notebook_image }}"
-c.DockerSpawner.remove = False
+#c.DockerSpawner.remove = False
+c.DockerSpawner.remove = True
 c.DockerSpawner.notebook_dir = "/home/jovyan"
 
 c.DockerSpawner.extra_create_kwargs = {
