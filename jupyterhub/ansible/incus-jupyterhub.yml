@@ -1,0 +1,160 @@
+---
+- hosts: all
+  become: yes
+  gather_facts: no
+
+  vars:
+    container_name: jupyterhub
+    jupyterhub_port: 8000
+    venv_dir: /opt/jupyterhub
+    data_dir: /srv/jupyterhub
+    config_file: /etc/jupyterhub/jupyterhub_config.py
+    image: images:ubuntu/24.04
+    admin_user: admin
+    admin_password: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=12') }}"
+
+  tasks:
+    # Run before any module tasks — raw avoids needing Python module infrastructure
+    - name: Install Python prerequisites on remote host
+      raw: |
+        set -e
+        if command -v apt &>/dev/null; then
+          apt update && apt install -y python3-six python3-pip
+        elif command -v dnf &>/dev/null; then
+          dnf install -y python3-six python3-pip
+        elif command -v yum &>/dev/null; then
+          yum install -y python3-six python3-pip
+        fi
+        # Ensure six.moves is importable (some distros ship a broken six)
+        python3 -c "from six.moves import urllib" 2>/dev/null ||
+          pip3 install --force-reinstall six
+        python3 -c "from six.moves import urllib; print('six.moves OK')"
+      changed_when: true
+
+    - name: Verify Python works on remote host
+      raw: python3 -c "from six.moves import urllib; print('Python + six OK')"
+      changed_when: false
+
+    - name: Launch Incus container
+      community.general.lxd_container:
+        name: "{{ container_name }}"
+        state: started
+        url: "unix:/var/lib/incus/unix.socket"
+        source:
+          type: image
+          mode: pull
+          server: "https://images.linuxcontainers.org"
+          protocol: simplestreams
+          alias: "{{ image }}"
+        wait_for_ipv4_addresses: true
+
+    - name: Get container IP
+      shell: |
+        incus list "{{ container_name }}" --format csv -c 4 | head -1 | awk '{print $1}'
+      register: container_ip
+      changed_when: false
+
+    - name: Update apt cache
+      command: incus exec "{{ container_name }}" -- apt update
+
+    - name: Upgrade packages
+      command: incus exec "{{ container_name }}" -- apt upgrade -y
+
+    - name: Install system packages
+      command: incus exec "{{ container_name }}" -- apt install -y
+        python3 python3-pip python3-venv
+        nodejs npm sqlite3 vim
+
+    - name: Install configurable-http-proxy
+      command: incus exec "{{ container_name }}" -- npm install -g configurable-http-proxy
+
+    - name: Create Python virtual environment
+      command: incus exec "{{ container_name }}" -- python3 -m venv "{{ venv_dir }}"
+      args:
+        creates: "{{ container_name }}:{{ venv_dir }}/bin/python"
+
+    - name: Upgrade pip in venv
+      command: incus exec "{{ container_name }}" -- "{{ venv_dir }}/bin/pip" install --upgrade pip
+
+    - name: Install JupyterHub packages in venv
+      command: incus exec "{{ container_name }}" -- "{{ venv_dir }}/bin/pip" install
+        jupyterhub jupyterlab notebook jupyterhub-nativeauthenticator
+
+    - name: Create config directory
+      command: incus exec "{{ container_name }}" -- mkdir -p /etc/jupyterhub
+
+    - name: Generate default JupyterHub config
+      command: incus exec "{{ container_name }}" -- "{{ venv_dir }}/bin/jupyterhub"
+        --generate-config -f "{{ config_file }}"
+      args:
+        creates: "{{ container_name }}:{{ config_file }}"
+
+    - name: Append custom JupyterHub config
+      command: incus exec "{{ container_name }}" -- sh -c
+        "cat >> {{ config_file }} << 'CONF'
+
+        c.JupyterHub.bind_url = 'http://0.0.0.0:{{ jupyterhub_port }}'
+        c.JupyterHub.authenticator_class = 'nativeauthenticator.NativeAuthenticator'
+        c.NativeAuthenticator.create_system_users = True
+        c.NativeAuthenticator.check_common_password = True
+        c.NativeAuthenticator.minimum_password_length = 8
+        c.JupyterHub.spawner_class = 'simple'
+        c.SimpleLocalProcessSpawner.home_dir_template = '/home/{username}'
+        CONF"
+
+    - name: Create admin user
+      command: incus exec "{{ container_name }}" -- useradd -m -s /bin/bash "{{ admin_user }}"
+      args:
+        creates: "{{ container_name }}:/home/{{ admin_user }}"
+
+    - name: Set admin password
+      command: incus exec "{{ container_name }}" -- sh -c
+        "echo '{{ admin_user }}:{{ admin_password }}' | chpasswd"
+
+    - name: Create JupyterHub systemd service file
+      command: incus exec "{{ container_name }}" -- sh -c
+        "cat > /etc/systemd/system/jupyterhub.service << 'SERVICE'
+        [Unit]
+        Description=JupyterHub
+        After=network.target
+
+        [Service]
+        Type=simple
+        User=root
+        WorkingDirectory={{ data_dir }}
+        ExecStart={{ venv_dir }}/bin/jupyterhub -f {{ config_file }}
+        Restart=always
+
+        [Install]
+        WantedBy=multi-user.target
+        SERVICE"
+
+    - name: Reload systemd and enable JupyterHub
+      command: incus exec "{{ container_name }}" -- sh -c
+        "systemctl daemon-reload && systemctl enable --now jupyterhub"
+
+    - name: Wait for JupyterHub to start
+      command: incus exec "{{ container_name }}" -- sh -c
+        "for i in \$(seq 1 10); do systemctl is-active jupyterhub && exit 0; sleep 2; done; exit 1"
+
+    - name: Add Incus proxy device
+      community.general.lxd_container:
+        name: "{{ container_name }}"
+        state: started
+        url: "unix:/var/lib/incus/unix.socket"
+        devices:
+          proxy-jupyterhub:
+            type: proxy
+            connect: "tcp:127.0.0.1:{{ jupyterhub_port }}"
+            listen: "tcp:0.0.0.0:{{ jupyterhub_port }}"
+
+    - name: Display connection info
+      debug:
+        msg:
+          - "JupyterHub is available at http://{{ container_ip.stdout | trim }}:{{ jupyterhub_port }}"
+          - "Login: {{ admin_user }} / {{ admin_password }}"
+          - ""
+          - "Manage the container:"
+          - "  incus shell {{ container_name }}"
+          - "  incus stop {{ container_name }}"
+          - "  incus delete {{ container_name }} --force"

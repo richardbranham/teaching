@@ -1,0 +1,6 @@
+pm_api_url          = "https://ns1010211.ip-51-81-109.us:8006/api2/json"
+pm_user             = "root@pam"
+pm_password         = "your-api-password-or-token"
+pm_node             = "proxmox"
+pm_storage          = "local"
+ssh_public_key_path = "/home/richard/.ssh/ovhcloud.pub"
