@@ -183,18 +183,9 @@
         mode: '0700'
         content: |
           import bcrypt, sqlite3, os
-          from pathlib import Path
 
-          candidates = ['/srv/jupyterhub', '/opt/jupyterhub', '/etc/jupyterhub']
-          db_path = None
-          for d in candidates:
-              p = list(Path(d).rglob('nativeauthenticator.sqlite'))
-              if p:
-                  db_path = str(p[0])
-                  break
-          if not db_path:
-              print('ERROR: nativeauthenticator.sqlite not found')
-              exit(1)
+          db_path = '{{ data_dir }}/nativeauthenticator.sqlite'
+          os.makedirs('{{ data_dir }}', exist_ok=True)
 
           conn = sqlite3.connect(db_path)
           conn.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, is_authorized INTEGER, is_admin INTEGER)')
