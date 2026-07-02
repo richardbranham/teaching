@@ -10,6 +10,7 @@
     data_dir: /srv/jupyterhub
     config_file: /etc/jupyterhub/jupyterhub_config.py
     incus_image: images:ubuntu/24.04
+    notebook_image: classroom-notebook
     admin_user: admin
     admin_password: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=12') }}"
 
@@ -42,8 +43,9 @@
       raw: python3 -c "from six.moves import urllib; print('Python + six OK')"
       changed_when: false
 
-    - name: Launch Incus container
+    - name: Launch Incus container with nesting
       command: incus launch {{ incus_image }} {{ container_name }}
+        --config security.nesting=true
       register: launch_result
       failed_when: launch_result.rc != 0 and "already exists" not in launch_result.stderr
       changed_when: launch_result.rc == 0
@@ -69,7 +71,11 @@
       command: incus exec "{{ container_name }}" -- apt install -y
         python3 python3-pip python3-venv
         nodejs npm sqlite3 vim curl less iproute2 net-tools
+        ca-certificates gnupg lsb-release
 
+    - name: Install Docker inside container
+      command: incus exec {{ container_name }} -- sh -c
+        "curl -fsSL https://get.docker.com | sh"
 
     - name: Install configurable-http-proxy
       command: incus exec "{{ container_name }}" -- npm install -g configurable-http-proxy
@@ -85,11 +91,43 @@
     - name: Install JupyterHub packages in venv
       command: incus exec "{{ container_name }}" -- "{{ venv_dir }}/bin/pip" install
         jupyterhub jupyterlab notebook jupyterhub-nativeauthenticator
+        dockerspawner
         numpy pandas matplotlib flask jupyter-server-proxy
         fastapi uvicorn streamlit copier
 
     - name: Create required directories
       command: incus exec {{ container_name }} -- mkdir -p /etc/jupyterhub {{ data_dir }}
+
+    - name: Start Docker inside container
+      command: incus exec {{ container_name }} -- systemctl enable --now docker
+
+    - name: Create Docker network for JupyterHub
+      command: incus exec {{ container_name }} -- docker network create jupyterhub-network
+      register: net_result
+      failed_when: net_result.rc != 0 and "already exists" not in net_result.stderr
+      changed_when: net_result.rc == 0
+
+    - name: Write Dockerfile to host temp dir
+      ansible.builtin.copy:
+        dest: /tmp/Dockerfile.classroom
+        content: |
+          FROM jupyter/base-notebook:latest
+          USER root
+          RUN apt-get update && \
+              apt-get install -y sqlite3 vim curl less iproute2 net-tools && \
+              apt-get clean && rm -rf /var/lib/apt/lists/*
+          RUN mkdir -p /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg/cache /tmp/xdg/data && \
+              chown -R ${NB_UID}:${NB_GID} /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg
+          USER ${NB_UID}
+          RUN pip install numpy pandas matplotlib flask jupyter-server-proxy \
+              fastapi uvicorn streamlit jupyterlab copier
+
+    - name: Push Dockerfile into container
+      command: incus file push /tmp/Dockerfile.classroom {{ container_name }}/tmp/build/Dockerfile
+
+    - name: Build notebook Docker image
+      command: incus exec {{ container_name }} -- docker build -t {{ notebook_image }} /tmp/build
+      changed_when: true
 
     - name: Generate default JupyterHub config
       command: incus exec "{{ container_name }}" -- "{{ venv_dir }}/bin/jupyterhub"
@@ -106,8 +144,20 @@
           c.NativeAuthenticator.create_system_users = True
           c.NativeAuthenticator.check_common_password = True
           c.NativeAuthenticator.minimum_password_length = 8
-          c.JupyterHub.spawner_class = 'simple'
-          c.SimpleLocalProcessSpawner.home_dir_template = '/home/{username}'
+
+          c.JupyterHub.spawner_class = 'dockerspawner.DockerSpawner'
+          c.DockerSpawner.image = '{{ notebook_image }}'
+          c.DockerSpawner.network_name = 'jupyterhub-network'
+          c.DockerSpawner.remove = True
+          c.DockerSpawner.use_internal_ip = True
+          c.DockerSpawner.mem_limit = '1G'
+          c.DockerSpawner.cpu_limit = 1
+          c.DockerSpawner.volumes = {
+              'jupyterhub-user-{username}': '/home/jovyan',
+          }
+          c.DockerSpawner.environment = {
+              'JUPYTER_ENABLE_LAB': 'yes',
+          }
 
     - name: Push config append file into container
       command: incus file push /tmp/jupyterhub_config_append.py {{ container_name }}/tmp/
