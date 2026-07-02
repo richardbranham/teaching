@@ -107,9 +107,9 @@
       failed_when: net_result.rc != 0 and "already exists" not in net_result.stderr
       changed_when: net_result.rc == 0
 
-    - name: Write Dockerfile to remote host
+    - name: Write Dockerfile to host temp
       ansible.builtin.copy:
-        dest: /tmp/Dockerfile.classroom
+        dest: /root/dockerfile.classroom
         mode: '0644'
         content: |
           FROM jupyter/base-notebook:latest
@@ -118,17 +118,17 @@
               apt-get install -y sqlite3 vim curl less iproute2 net-tools && \
               apt-get clean && rm -rf /var/lib/apt/lists/*
           RUN mkdir -p /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg/cache /tmp/xdg/data && \
-              chown -R ${NB_UID}:${NB_GID} /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg
-          USER ${NB_UID}
+              chown -R 1000:100 /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg
+          USER 1000
           RUN pip install numpy pandas matplotlib flask jupyter-server-proxy \
               fastapi uvicorn streamlit jupyterlab copier
 
-    - name: Verify Dockerfile exists on host
-      raw: ls -la /tmp/Dockerfile.classroom
-      changed_when: false
+    - name: Create build dir inside container
+      command: incus exec {{ container_name }} -- mkdir -p /tmp/build
 
-    - name: Push Dockerfile into container
-      command: incus file push /tmp/Dockerfile.classroom {{ container_name }}/tmp/build/Dockerfile
+    - name: Pipe Dockerfile into container
+      shell: |
+        cat /root/dockerfile.classroom | incus exec {{ container_name }} -- sh -c 'cat > /tmp/build/Dockerfile'
 
     - name: Build notebook Docker image
       command: incus exec {{ container_name }} -- docker build -t {{ notebook_image }} /tmp/build
