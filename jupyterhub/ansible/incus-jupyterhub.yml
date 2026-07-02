@@ -107,9 +107,10 @@
       failed_when: net_result.rc != 0 and "already exists" not in net_result.stderr
       changed_when: net_result.rc == 0
 
-    - name: Write Dockerfile to host temp dir
+    - name: Write Dockerfile to remote host
       ansible.builtin.copy:
         dest: /tmp/Dockerfile.classroom
+        mode: '0644'
         content: |
           FROM jupyter/base-notebook:latest
           USER root
@@ -121,6 +122,10 @@
           USER ${NB_UID}
           RUN pip install numpy pandas matplotlib flask jupyter-server-proxy \
               fastapi uvicorn streamlit jupyterlab copier
+
+    - name: Verify Dockerfile exists on host
+      raw: ls -la /tmp/Dockerfile.classroom
+      changed_when: false
 
     - name: Push Dockerfile into container
       command: incus file push /tmp/Dockerfile.classroom {{ container_name }}/tmp/build/Dockerfile
