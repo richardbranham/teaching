@@ -85,8 +85,8 @@
       command: incus exec "{{ container_name }}" -- "{{ venv_dir }}/bin/pip" install
         jupyterhub jupyterlab notebook jupyterhub-nativeauthenticator
 
-    - name: Create config directory
-      command: incus exec "{{ container_name }}" -- mkdir -p /etc/jupyterhub
+    - name: Create required directories
+      command: incus exec {{ container_name }} -- mkdir -p /etc/jupyterhub {{ data_dir }}
 
     - name: Generate default JupyterHub config
       command: incus exec "{{ container_name }}" -- "{{ venv_dir }}/bin/jupyterhub"
