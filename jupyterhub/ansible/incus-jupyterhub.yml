@@ -9,7 +9,7 @@
     venv_dir: /opt/jupyterhub
     data_dir: /srv/jupyterhub
     config_file: /etc/jupyterhub/jupyterhub_config.py
-    image: images:ubuntu/24.04
+    incus_image: images:ubuntu/24.04
     admin_user: admin
     admin_password: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=12') }}"
 
@@ -43,7 +43,7 @@
       changed_when: false
 
     - name: Launch Incus container
-      command: incus launch {{ image }} {{ container_name }}
+      command: incus launch {{ incus_image }} {{ container_name }}
       register: launch_result
       failed_when: launch_result.rc != 0 and "already exists" not in launch_result.stderr
       changed_when: launch_result.rc == 0
@@ -68,7 +68,8 @@
     - name: Install system packages
       command: incus exec "{{ container_name }}" -- apt install -y
         python3 python3-pip python3-venv
-        nodejs npm sqlite3 vim
+        nodejs npm sqlite3 vim curl less iproute2 net-tools
+
 
     - name: Install configurable-http-proxy
       command: incus exec "{{ container_name }}" -- npm install -g configurable-http-proxy
@@ -84,6 +85,8 @@
     - name: Install JupyterHub packages in venv
       command: incus exec "{{ container_name }}" -- "{{ venv_dir }}/bin/pip" install
         jupyterhub jupyterlab notebook jupyterhub-nativeauthenticator
+        numpy pandas matplotlib flask jupyter-server-proxy
+        fastapi uvicorn streamlit copier
 
     - name: Create required directories
       command: incus exec {{ container_name }} -- mkdir -p /etc/jupyterhub {{ data_dir }}
