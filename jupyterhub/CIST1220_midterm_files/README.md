@@ -34,3 +34,4 @@ The steps below will enable you to create and execute SQL queries to meet the pr
     - Using the one for localhost will be easiest, although the others should also work.
     - localhost is the same as 127.0.0.1 but is easier to remember.  Any time 127.0.0.1 is working, localhost will also work.
     - Only 1 of these locations needs to be opened in the browser.  The locations will be similar to the "Running" examples in step 6.
+
