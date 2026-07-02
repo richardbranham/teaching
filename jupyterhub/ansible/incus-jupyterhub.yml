@@ -87,18 +87,24 @@
       args:
         creates: "{{ container_name }}:{{ config_file }}"
 
-    - name: Append custom JupyterHub config
-      command: incus exec "{{ container_name }}" -- sh -c
-        "cat >> {{ config_file }} << 'CONF'
+    - name: Write custom JupyterHub config to host temp dir
+      ansible.builtin.copy:
+        dest: /tmp/jupyterhub_config_append.py
+        content: |
+          c.JupyterHub.bind_url = 'http://0.0.0.0:{{ jupyterhub_port }}'
+          c.JupyterHub.authenticator_class = 'nativeauthenticator.NativeAuthenticator'
+          c.NativeAuthenticator.create_system_users = True
+          c.NativeAuthenticator.check_common_password = True
+          c.NativeAuthenticator.minimum_password_length = 8
+          c.JupyterHub.spawner_class = 'simple'
+          c.SimpleLocalProcessSpawner.home_dir_template = '/home/{username}'
 
-        c.JupyterHub.bind_url = 'http://0.0.0.0:{{ jupyterhub_port }}'
-        c.JupyterHub.authenticator_class = 'nativeauthenticator.NativeAuthenticator'
-        c.NativeAuthenticator.create_system_users = True
-        c.NativeAuthenticator.check_common_password = True
-        c.NativeAuthenticator.minimum_password_length = 8
-        c.JupyterHub.spawner_class = 'simple'
-        c.SimpleLocalProcessSpawner.home_dir_template = '/home/{username}'
-        CONF"
+    - name: Push config append file into container
+      command: incus file push /tmp/jupyterhub_config_append.py {{ container_name }}/tmp/
+
+    - name: Append config inside container
+      command: incus exec {{ container_name }} -- sh -c
+        "cat /tmp/jupyterhub_config_append.py >> {{ config_file }}"
 
     - name: Create admin user
       command: incus exec "{{ container_name }}" -- useradd -m -s /bin/bash "{{ admin_user }}"
@@ -109,23 +115,26 @@
       command: incus exec "{{ container_name }}" -- sh -c
         "echo '{{ admin_user }}:{{ admin_password }}' | chpasswd"
 
-    - name: Create JupyterHub systemd service file
-      command: incus exec "{{ container_name }}" -- sh -c
-        "cat > /etc/systemd/system/jupyterhub.service << 'SERVICE'
-        [Unit]
-        Description=JupyterHub
-        After=network.target
+    - name: Write JupyterHub service file to host temp dir
+      ansible.builtin.copy:
+        dest: /tmp/jupyterhub.service
+        content: |
+          [Unit]
+          Description=JupyterHub
+          After=network.target
 
-        [Service]
-        Type=simple
-        User=root
-        WorkingDirectory={{ data_dir }}
-        ExecStart={{ venv_dir }}/bin/jupyterhub -f {{ config_file }}
-        Restart=always
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory={{ data_dir }}
+          ExecStart={{ venv_dir }}/bin/jupyterhub -f {{ config_file }}
+          Restart=always
 
-        [Install]
-        WantedBy=multi-user.target
-        SERVICE"
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Push service file into container
+      command: incus file push /tmp/jupyterhub.service {{ container_name }}/etc/systemd/system/jupyterhub.service
 
     - name: Reload systemd and enable JupyterHub
       command: incus exec "{{ container_name }}" -- sh -c
