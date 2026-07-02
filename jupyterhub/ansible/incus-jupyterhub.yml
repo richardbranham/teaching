@@ -11,8 +11,8 @@
     config_file: /etc/jupyterhub/jupyterhub_config.py
     incus_image: images:ubuntu/24.04
     notebook_image: classroom-notebook
-    admin_user: admin
-    admin_password: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=12') }}"
+    admin_user: rbranham@gwinnetttech.edu
+    admin_password: Kucharkj1*
 
   tasks:
     - name: Delete existing container
@@ -146,9 +146,11 @@
         content: |
           c.JupyterHub.bind_url = 'http://0.0.0.0:{{ jupyterhub_port }}'
           c.JupyterHub.authenticator_class = 'nativeauthenticator.NativeAuthenticator'
-          c.NativeAuthenticator.create_system_users = True
           c.NativeAuthenticator.check_common_password = True
           c.NativeAuthenticator.minimum_password_length = 8
+          c.NativeAuthenticator.ask_email_on_signup = False
+          c.Authenticator.username_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+          c.Authenticator.admin_users = {'{{ admin_user }}'}
 
           c.JupyterHub.spawner_class = 'dockerspawner.DockerSpawner'
           c.DockerSpawner.image = '{{ notebook_image }}'
@@ -171,14 +173,38 @@
       command: incus exec {{ container_name }} -- sh -c
         "cat /tmp/jupyterhub_config_append.py >> {{ config_file }}"
 
-    - name: Create admin user
-      command: incus exec "{{ container_name }}" -- useradd -m -s /bin/bash "{{ admin_user }}"
-      args:
-        creates: "{{ container_name }}:/home/{{ admin_user }}"
+    # ── Admin user creation ──
+    # Write the script now (Ansible substitutes the vars), but execute after
+    # JupyterHub starts so the NativeAuthenticator DB exists.
 
-    - name: Set admin password
-      command: incus exec "{{ container_name }}" -- sh -c
-        "echo '{{ admin_user }}:{{ admin_password }}' | chpasswd"
+    - name: Write admin creation script to host
+      ansible.builtin.copy:
+        dest: /root/create_admin.py
+        mode: '0700'
+        content: |
+          import bcrypt, sqlite3, os
+          from pathlib import Path
+
+          candidates = ['/srv/jupyterhub', '/opt/jupyterhub', '/etc/jupyterhub']
+          db_path = None
+          for d in candidates:
+              p = list(Path(d).rglob('nativeauthenticator.sqlite'))
+              if p:
+                  db_path = str(p[0])
+                  break
+          if not db_path:
+              print('ERROR: nativeauthenticator.sqlite not found')
+              exit(1)
+
+          conn = sqlite3.connect(db_path)
+          conn.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, is_authorized INTEGER, is_admin INTEGER)')
+
+          pw = bcrypt.hashpw(b'{{ admin_password }}', bcrypt.gensalt()).decode()
+          conn.execute('INSERT OR REPLACE INTO users (username, password, is_authorized, is_admin) VALUES (?, ?, 1, 1)',
+                       ('{{ admin_user }}', pw))
+          conn.commit()
+          conn.close()
+          print(f'Admin user {{ admin_user }} created in {db_path}')
 
     - name: Write JupyterHub service file to host temp dir
       ansible.builtin.copy:
@@ -210,6 +236,22 @@
         'i=0; while [ "$i" -lt 15 ]; do systemctl is-active jupyterhub && exit 0; i=$((i + 1)); sleep 2; done; exit 1'
       register: jh_start_result
       ignore_errors: yes
+
+    - name: Pipe admin creation script into container and execute
+      shell: |
+        cat /root/create_admin.py | incus exec {{ container_name }} -- {{ venv_dir }}/bin/python3
+      when: jh_start_result is succeeded
+
+    - name: Restart JupyterHub to pick up admin user
+      command: incus exec {{ container_name }} -- systemctl restart jupyterhub
+      when: jh_start_result is succeeded
+
+    - name: Wait for JupyterHub after restart
+      command: incus exec "{{ container_name }}" -- sh -c
+        'i=0; while [ "$i" -lt 15 ]; do systemctl is-active jupyterhub && exit 0; i=$((i + 1)); sleep 2; done; exit 1'
+      register: jh_restart_result
+      ignore_errors: yes
+      when: jh_start_result is succeeded
 
     - name: Diagnose JupyterHub service failure
       when: jh_start_result is failed
@@ -256,6 +298,7 @@
         msg:
           - "JupyterHub is available at http://{{ container_ip.stdout | trim }}:{{ jupyterhub_port }}"
           - "Login: {{ admin_user }} / {{ admin_password }}"
+          - "Users can sign up with their email address as username."
           - ""
           - "Manage the container:"
           - "  incus shell {{ container_name }}"
