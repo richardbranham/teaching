@@ -149,7 +149,41 @@
 
     - name: Wait for JupyterHub to start
       command: incus exec "{{ container_name }}" -- sh -c
-        'i=0; while [ "$i" -lt 10 ]; do systemctl is-active jupyterhub && exit 0; i=$((i + 1)); sleep 2; done; exit 1'
+        'i=0; while [ "$i" -lt 15 ]; do systemctl is-active jupyterhub && exit 0; i=$((i + 1)); sleep 2; done; exit 1'
+      register: jh_start_result
+      ignore_errors: yes
+
+    - name: Diagnose JupyterHub service failure
+      when: jh_start_result is failed
+      block:
+        - name: Show service status
+          command: incus exec {{ container_name }} -- systemctl status jupyterhub --no-pager
+          ignore_errors: yes
+
+        - name: Show journal logs
+          command: incus exec {{ container_name }} -- journalctl -u jupyterhub --no-pager -n 50
+          ignore_errors: yes
+
+        - name: Test jupyterhub directly
+          command: incus exec {{ container_name }} -- {{ venv_dir }}/bin/jupyterhub --version
+          ignore_errors: yes
+
+        - name: Check jupyterhub binary path
+          command: incus exec {{ container_name }} -- ls -la {{ venv_dir }}/bin/jupyterhub
+          ignore_errors: yes
+
+        - name: Verify config file
+          command: incus exec {{ container_name }} -- head -20 {{ config_file }}
+          ignore_errors: yes
+
+        - name: Test run jupyterhub briefly
+          command: incus exec {{ container_name }} -- sh -c
+            'timeout 3 {{ venv_dir }}/bin/jupyterhub -f {{ config_file }} --no-ssl 2>&1 || true'
+          ignore_errors: yes
+
+        - name: Fail with diagnostic info
+          fail:
+            msg: "JupyterHub service failed to start. Check the output above for details."
 
     - name: Add Incus proxy device
       command: incus config device add {{ container_name }} proxy-jupyterhub proxy
