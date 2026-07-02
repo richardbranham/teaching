@@ -36,21 +36,19 @@
       changed_when: false
 
     - name: Launch Incus container
-      community.general.lxd_container:
-        name: "{{ container_name }}"
-        state: started
-        url: "unix:/var/lib/incus/unix.socket"
-        source:
-          type: image
-          mode: pull
-          server: "https://images.linuxcontainers.org"
-          protocol: simplestreams
-          alias: "{{ image }}"
-        wait_for_ipv4_addresses: true
+      command: incus launch {{ image }} {{ container_name }}
+      register: launch_result
+      failed_when: launch_result.rc != 0 and "already exists" not in launch_result.stderr
+      changed_when: launch_result.rc == 0
 
-    - name: Get container IP
+    - name: Wait for container to get an IP
       shell: |
-        incus list "{{ container_name }}" --format csv -c 4 | head -1 | awk '{print $1}'
+        for i in $(seq 1 30); do
+          ip=$(incus list "{{ container_name }}" --format csv -c 4 | head -1 | awk '{print $1}')
+          [ -n "$ip" ] && [ "$ip" != "-" ] && echo "$ip" && exit 0
+          sleep 2
+        done
+        exit 1
       register: container_ip
       changed_when: false
 
@@ -138,15 +136,12 @@
         "for i in \$(seq 1 10); do systemctl is-active jupyterhub && exit 0; sleep 2; done; exit 1"
 
     - name: Add Incus proxy device
-      community.general.lxd_container:
-        name: "{{ container_name }}"
-        state: started
-        url: "unix:/var/lib/incus/unix.socket"
-        devices:
-          proxy-jupyterhub:
-            type: proxy
-            connect: "tcp:127.0.0.1:{{ jupyterhub_port }}"
-            listen: "tcp:0.0.0.0:{{ jupyterhub_port }}"
+      command: incus config device add {{ container_name }} proxy-jupyterhub proxy
+        connect=tcp:127.0.0.1:{{ jupyterhub_port }}
+        listen=tcp:0.0.0.0:{{ jupyterhub_port }}
+      register: proxy_result
+      failed_when: proxy_result.rc != 0 and "already exists" not in proxy_result.stderr
+      changed_when: proxy_result.rc == 0
 
     - name: Display connection info
       debug:
