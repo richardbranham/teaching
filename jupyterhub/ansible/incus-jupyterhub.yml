@@ -273,7 +273,7 @@
           RUN chmod 755 /usr/local/bin/setup-and-start.sh
           USER 1000
           RUN pip install numpy pandas matplotlib flask jupyter-server-proxy \
-              fastapi uvicorn streamlit jupyterlab copier
+              fastapi uvicorn streamlit jupyterlab jupyterhub copier
 
     - name: Create build dir inside container
       command: incus exec {{ container_name }} -- mkdir -p /tmp/build
@@ -325,9 +325,9 @@
           c.DockerSpawner.remove = True
           c.DockerSpawner.mem_limit = '1G'
           c.DockerSpawner.cpu_limit = 1
-          c.DockerSpawner.cmd = ['jupyterhub-singleuser']
+          c.DockerSpawner.cmd = ['/usr/local/bin/setup-and-start.sh']
           c.DockerSpawner.volumes = {
-              '{{ data_dir }}/users/{username}': '/home/jovyan',
+              'jupyterhub-user-{username}': '/home/jovyan',
           }
           c.DockerSpawner.environment = {
               'JUPYTER_ENABLE_LAB': 'yes',
