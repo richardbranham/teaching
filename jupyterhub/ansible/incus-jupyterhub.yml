@@ -120,7 +120,7 @@
           RUN mkdir -p /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg/cache /tmp/xdg/data && \
               chown -R 1000:100 /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg
           USER 1000
-          RUN pip install numpy pandas matplotlib flask jupyter-server-proxy \
+          RUN pip install jupyterhub numpy pandas matplotlib flask jupyter-server-proxy \
               fastapi uvicorn streamlit jupyterlab copier
 
     - name: Create build dir inside container
