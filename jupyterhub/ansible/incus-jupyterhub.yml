@@ -73,21 +73,16 @@
           register: dpkg_arch
           changed_when: false
 
-        - name: Remove any old Incus repo files
-          raw: rm -f /etc/apt/sources.list.d/zabbly-incus*.list /etc/apt/sources.list.d/zabbly-incus*.sources
-          changed_when: true
-
         - name: Add Incus repository
           raw: |
-            cat > /etc/apt/sources.list.d/zabbly-incus-stable.sources << 'SOURCE'
-            Types: deb
-            URIs: https://pkgs.zabbly.com/incus/stable
-            Suites: {{ os_codename.stdout }}
-            Components: main
-            Architectures: {{ dpkg_arch.stdout }}
-            Signed-By: /etc/apt/keyrings/zabbly.asc
-            Enabled: yes
-            SOURCE
+            rm -f /etc/apt/sources.list.d/zabbly-incus*
+            echo "Types: deb" > /etc/apt/sources.list.d/zabbly-incus-stable.sources
+            echo "URIs: https://pkgs.zabbly.com/incus/stable" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
+            echo "Suites: {{ os_codename.stdout }}" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
+            echo "Components: main" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
+            echo "Architectures: {{ dpkg_arch.stdout }}" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
+            echo "Signed-By: /etc/apt/keyrings/zabbly.asc" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
+            echo "Enabled: yes" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
           changed_when: true
 
         - name: Install incus package
