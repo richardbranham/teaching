@@ -1,3 +1,7 @@
+Incus on OVH is working.
+
+*******************************************************************************
+Docker on Digital Ocean:
 
 docker stop jupyterhub; docker image rm classroom-notebook:latest jupyter/base-notebook:latest jupyterhub/jupyterhub:latest --force; docker rm jupyterhub jupyter-richardbranham --force
 
