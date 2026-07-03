@@ -15,6 +15,52 @@
     admin_password: ChangeMe1@
 
   tasks:
+    - name: Check if incus is installed
+      command: which incus
+      register: incus_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install incus (Debian/Ubuntu)
+      when: incus_check.rc != 0
+      block:
+        - name: Add Incus repository key
+          raw: |
+            set -e
+            if ! command -v incus &>/dev/null; then
+              apt update && apt install -y curl gpg
+              curl -fsSL https://pkgs.zabbly.com/get.asc -o /tmp/zabbly.asc
+              gpg --show-keys --fingerprint /tmp/zabbly.asc \
+                | grep -q "4EFC 590B 9B35 F81E 19E5  6011 8590 94A0 30C7 DCF8" \
+                || { echo "GPG key fingerprint mismatch"; exit 1; }
+              sh -c 'cp /tmp/zabbly.asc /etc/apt/keyrings/zabbly.asc'
+            fi
+          changed_when: true
+
+        - name: Add Incus repository
+          raw: |
+            set -e
+            if [ ! -f /etc/apt/sources.list.d/zabbly-incus-stable.sources ]; then
+              cat > /etc/apt/sources.list.d/zabbly-incus-stable.sources << 'SOURCE'
+            Types: deb
+            URIs: https://pkgs.zabbly.com/stable
+            Suites: $(. /etc/os-release && echo "${VERSION_CODENAME}")
+            Components: main
+            Architectures: $(dpkg --print-architecture)
+            Signed-By: /etc/apt/keyrings/zabbly.asc
+            SOURCE
+            fi
+          changed_when: true
+
+        - name: Install incus package
+          raw: |
+            apt update && apt install -y incus
+          changed_when: true
+
+        - name: Start and enable incus
+          raw: systemctl enable --now incus
+          changed_when: true
+
     - name: Delete existing container
       command: incus delete {{ container_name }} --force
       register: delete_result
