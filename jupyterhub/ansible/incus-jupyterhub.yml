@@ -145,6 +145,13 @@
         - "{{ host_data_dir }}/users"
         - "{{ host_monitoring_dir }}"
 
+    - name: Load kernel modules for Docker bridge networking
+      raw: |
+        set -e
+        modprobe br_netfilter 2>/dev/null || true
+        sysctl -w net.bridge.bridge-nf-call-iptables=1 2>/dev/null || true
+      changed_when: false
+
     - name: Launch Incus container with nesting
       command: incus launch {{ incus_image }} {{ container_name }}
         --config security.nesting=true
