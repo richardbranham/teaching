@@ -150,6 +150,7 @@
           c.NativeAuthenticator.minimum_password_length = 8
           c.NativeAuthenticator.ask_email_on_signup = False
           c.Authenticator.username_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+          c.Authenticator.allow_all = True
           c.Authenticator.admin_users = {'{{ admin_user }}'}
 
           c.JupyterHub.spawner_class = 'dockerspawner.DockerSpawner'
