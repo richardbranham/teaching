@@ -164,15 +164,7 @@ c.NativeAuthenticator.tos = """
 
 c.JupyterHub.spawner_class = GwinnettDockerSpawner
 
-import hashlib
-
-def _user_port(spawner):
-    h = int(hashlib.sha256(spawner.user.name.encode()).hexdigest()[:8], 16)
-    spawner.port = 9000 + (h % 1000)
-    spawner.hub_ip = '127.0.0.1'
-
 c.DockerSpawner.network_mode = 'host'
-c.DockerSpawner.pre_spawn_hook = _user_port
 
 c.DockerSpawner.cpu_limit = .5
 c.DockerSpawner.cpu_guarantee = 0.25

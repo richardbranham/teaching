@@ -319,20 +319,13 @@
 
           c.JupyterHub.authenticate_prometheus = False
 
-          import hashlib
-          def _user_port(spawner):
-              h = int(hashlib.sha256(spawner.user.name.encode()).hexdigest()[:8], 16)
-              spawner.port = 9000 + (h % 1000)
-              spawner.hub_ip = '127.0.0.1'
-
           c.JupyterHub.spawner_class = 'dockerspawner.DockerSpawner'
           c.DockerSpawner.image = '{{ notebook_image }}'
           c.DockerSpawner.network_mode = 'host'
           c.DockerSpawner.remove = True
-          c.DockerSpawner.cmd = ['/usr/local/bin/setup-and-start.sh']
           c.DockerSpawner.mem_limit = '1G'
           c.DockerSpawner.cpu_limit = 1
-          c.DockerSpawner.pre_spawn_hook = _user_port
+          c.DockerSpawner.cmd = ['jupyterhub-singleuser']
           c.DockerSpawner.volumes = {
               '{{ data_dir }}/users/{username}': '/home/jovyan',
           }
