@@ -12,7 +12,7 @@
     incus_image: images:ubuntu/24.04
     notebook_image: classroom-notebook
     admin_user: rbranham@gwinnetttech.edu
-    admin_password: Kucharkj1*
+    admin_password: ChangeMe1@
 
   tasks:
     - name: Delete existing container
@@ -188,10 +188,22 @@
           os.makedirs('{{ data_dir }}', exist_ok=True)
 
           conn = sqlite3.connect(db_path)
-          conn.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, is_authorized INTEGER, is_admin INTEGER)')
+          conn.execute('''
+              CREATE TABLE IF NOT EXISTS users_info (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  username TEXT NOT NULL,
+                  password BLOB NOT NULL,
+                  is_authorized INTEGER DEFAULT 0,
+                  login_email_sent INTEGER DEFAULT 0,
+                  email TEXT,
+                  has_2fa INTEGER DEFAULT 0,
+                  otp_secret TEXT
+              )
+          ''')
 
-          pw = bcrypt.hashpw(b'{{ admin_password }}', bcrypt.gensalt()).decode()
-          conn.execute('INSERT OR REPLACE INTO users (username, password, is_authorized, is_admin) VALUES (?, ?, 1, 1)',
+          pw = bcrypt.hashpw(b'{{ admin_password }}', bcrypt.gensalt())
+          conn.execute('DELETE FROM users_info WHERE username = ?', ('{{ admin_user }}',))
+          conn.execute('INSERT INTO users_info (username, password, is_authorized) VALUES (?, ?, 1)',
                        ('{{ admin_user }}', pw))
           conn.commit()
           conn.close()
