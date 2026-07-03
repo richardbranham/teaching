@@ -42,6 +42,13 @@
     - name: Install incus (Debian/Ubuntu)
       when: incus_check.rc != 0
       block:
+        - name: Update apt cache and install dependencies
+          raw: |
+            set -e
+            apt update
+            apt install -y curl gpg
+          changed_when: true
+
         - name: Add Incus repository key
           raw: |
             set -e
@@ -78,13 +85,6 @@
             echo "Enabled: yes" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
           changed_when: true
 
-        - name: Update apt cache and install dependencies
-          raw: |
-            set -e
-            apt update
-            apt install -y curl gpg
-          changed_when: true
-
         - name: Install incus package
           raw: |
             apt update && apt install -y incus
@@ -94,8 +94,14 @@
           raw: systemctl enable --now incus
           changed_when: true
 
-        - name: Initialize Incus
-          raw: incus admin init --auto
+        - name: Wait for Incus socket and initialize
+          raw: |
+            for i in $(seq 1 30); do
+              [ -S /var/lib/incus/unix.socket ] && break
+              sleep 1
+            done
+            [ -S /var/lib/incus/unix.socket ] || { echo "Incus socket not found"; exit 1; }
+            incus admin init --auto
           changed_when: true
 
     - name: Delete existing container
