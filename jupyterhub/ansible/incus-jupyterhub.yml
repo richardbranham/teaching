@@ -151,9 +151,15 @@
       shell: |
         cat /root/dockerfile.classroom | incus exec {{ container_name }} -- sh -c 'cat > /tmp/build/Dockerfile'
 
+    - name: Copy midterm files to remote host
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../CIST1220_midterm_files/"
+        dest: /tmp/CIST1220_midterm_files/
+        mode: preserve
+
     - name: Push midterm files into build context
       shell: |
-        incus file push -r "{{ playbook_dir }}/../CIST1220_midterm_files" {{ container_name }}/tmp/build/CIST1220_midterm_files/
+        incus file push -r /tmp/CIST1220_midterm_files {{ container_name }}/tmp/build/
 
     - name: Build notebook Docker image
       command: incus exec {{ container_name }} -- docker build -t {{ notebook_image }} /tmp/build
