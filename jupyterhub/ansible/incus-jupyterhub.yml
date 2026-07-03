@@ -119,6 +119,27 @@
               apt-get clean && rm -rf /var/lib/apt/lists/*
           RUN mkdir -p /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg/cache /tmp/xdg/data && \
               chown -R 1000:100 /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg
+          COPY CIST1220_midterm_files /opt/CIST1220_midterm_files/
+          RUN chmod -R 555 /opt/CIST1220_midterm_files && \
+              chown -R 1000:100 /opt/CIST1220_midterm_files
+          RUN cat > /usr/local/bin/setup-and-start.sh << 'SCRIPT'
+          #!/bin/bash
+          set -e
+
+          MIDTERM_SRC="/opt/CIST1220_midterm_files"
+          MIDTERM_DST="$HOME/CIST1220/midterm_project_master"
+
+          if [ ! -d "$MIDTERM_DST" ]; then
+              mkdir -p "$MIDTERM_DST"
+              cp -r "$MIDTERM_SRC/"* "$MIDTERM_DST/"
+              find "$MIDTERM_DST" -type f -exec chmod 444 {} \;
+              find "$MIDTERM_DST" -type d -exec chmod 555 {} \;
+              chmod 755 "$HOME/CIST1220"
+          fi
+
+          exec jupyterhub-singleuser "$@"
+          SCRIPT
+          RUN chmod 755 /usr/local/bin/setup-and-start.sh
           USER 1000
           RUN pip install numpy pandas matplotlib flask jupyter-server-proxy \
               fastapi uvicorn streamlit jupyterlab copier
@@ -129,6 +150,10 @@
     - name: Pipe Dockerfile into container
       shell: |
         cat /root/dockerfile.classroom | incus exec {{ container_name }} -- sh -c 'cat > /tmp/build/Dockerfile'
+
+    - name: Push midterm files into build context
+      shell: |
+        incus file push -r "{{ playbook_dir }}/../CIST1220_midterm_files" {{ container_name }}/tmp/build/CIST1220_midterm_files/
 
     - name: Build notebook Docker image
       command: incus exec {{ container_name }} -- docker build -t {{ notebook_image }} /tmp/build
@@ -160,6 +185,7 @@
           c.DockerSpawner.network_name = 'jupyterhub-network'
           c.DockerSpawner.remove = True
           c.DockerSpawner.use_internal_ip = True
+          c.DockerSpawner.cmd = ['/usr/local/bin/setup-and-start.sh']
           c.DockerSpawner.mem_limit = '1G'
           c.DockerSpawner.cpu_limit = 1
           c.DockerSpawner.volumes = {
