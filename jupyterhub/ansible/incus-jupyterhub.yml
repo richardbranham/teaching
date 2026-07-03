@@ -476,6 +476,9 @@
       failed_when: false
       changed_when: grafana_rm.rc == 0
 
+    - name: Fix Grafana data directory permissions
+      command: incus exec {{ container_name }} -- chown -R 472:472 /srv/monitoring/grafana
+
     - name: Launch Grafana container
       command: incus exec {{ container_name }} -- docker run -d
         --name grafana
