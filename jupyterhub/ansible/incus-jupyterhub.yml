@@ -26,7 +26,7 @@
         elif command -v yum &>/dev/null; then
           yum install -y python3-pip
         fi
-        python3 -m pip install --force-reinstall six 2>/dev/null || true
+        python3 -m pip install six
         python3 -c "from six.moves import urllib; print('six.moves OK')"
       changed_when: true
 
