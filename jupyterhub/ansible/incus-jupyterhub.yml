@@ -203,7 +203,7 @@
         fastapi uvicorn streamlit copier
 
     - name: Create required directories
-      command: incus exec {{ container_name }} -- mkdir -p /etc/jupyterhub {{ data_dir }}
+      command: incus exec {{ container_name }} -- mkdir -p /etc/jupyterhub {{ data_dir }} {{ data_dir }}/users
 
     - name: Start Docker inside container
       command: incus exec {{ container_name }} -- systemctl enable --now docker
@@ -314,7 +314,7 @@
           c.DockerSpawner.mem_limit = '1G'
           c.DockerSpawner.cpu_limit = 1
           c.DockerSpawner.volumes = {
-              'jupyterhub-user-{username}': '/home/jovyan',
+              '{{ data_dir }}/users/{username}': '/home/jovyan',
           }
           c.DockerSpawner.environment = {
               'JUPYTER_ENABLE_LAB': 'yes',
