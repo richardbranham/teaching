@@ -94,6 +94,10 @@
           raw: systemctl enable --now incus
           changed_when: true
 
+        - name: Initialize Incus
+          raw: incus admin init --auto
+          changed_when: true
+
     - name: Delete existing container
       command: incus delete {{ container_name }} --force
       register: delete_result
