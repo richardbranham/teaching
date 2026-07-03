@@ -34,9 +34,10 @@
         - name: Add Incus repository key
           raw: |
             set -e
-            curl -fsSL https://pkgs.zabbly.com/get.asc -o /tmp/zabbly.asc
+            mkdir -p /etc/apt/keyrings
+            curl -fsSL https://pkgs.zabbly.com/key.asc -o /tmp/zabbly.asc
             gpg --show-keys --fingerprint /tmp/zabbly.asc \
-              | grep -q "4EFC 590B 9B35 F81E 19E5  6011 8590 94A0 30C7 DCF8" \
+              | grep -q "4EFC 5906 96CB 15B8 7C73  A3AD 82CC 8797 C838 DCFD" \
               || { echo "GPG key fingerprint mismatch"; exit 1; }
             cp /tmp/zabbly.asc /etc/apt/keyrings/zabbly.asc
           changed_when: true
@@ -47,11 +48,12 @@
             if [ ! -f /etc/apt/sources.list.d/zabbly-incus-stable.sources ]; then
               cat > /etc/apt/sources.list.d/zabbly-incus-stable.sources << 'SOURCE'
             Types: deb
-            URIs: https://pkgs.zabbly.com/stable
+            URIs: https://pkgs.zabbly.com/incus/stable
             Suites: $(. /etc/os-release && echo "${VERSION_CODENAME}")
             Components: main
             Architectures: $(dpkg --print-architecture)
             Signed-By: /etc/apt/keyrings/zabbly.asc
+            Enabled: yes
             SOURCE
             fi
           changed_when: true
