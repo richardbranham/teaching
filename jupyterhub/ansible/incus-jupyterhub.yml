@@ -13,6 +13,8 @@
     notebook_image: classroom-notebook
     admin_user: rbranham@gwinnetttech.edu
     admin_password: ChangeMe1@
+    host_data_dir: /srv/jupyterhub-data
+    host_monitoring_dir: /srv/monitoring-data
 
   tasks:
     # Run before any module tasks — raw avoids needing Python module infrastructure
@@ -121,6 +123,15 @@
       changed_when: delete_result.rc == 0
       tags: [delete, never]
 
+    - name: Create host directories for persistent data
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ host_data_dir }}"
+        - "{{ host_monitoring_dir }}"
+
     - name: Launch Incus container with nesting
       command: incus launch {{ incus_image }} {{ container_name }}
         --config security.nesting=true
@@ -138,6 +149,24 @@
         exit 1
       register: container_ip
       changed_when: false
+
+    - name: Mount host directories for persistent data
+      block:
+        - name: Add disk device for JupyterHub data
+          command: incus config device add {{ container_name }} jupyterhub-data disk
+            source={{ host_data_dir }}
+            path={{ data_dir }}
+          register: data_device
+          failed_when: data_device.rc != 0 and "already exists" not in data_device.stderr
+          changed_when: data_device.rc == 0
+
+        - name: Add disk device for monitoring data
+          command: incus config device add {{ container_name }} monitoring-data disk
+            source={{ host_monitoring_dir }}
+            path=/srv/monitoring
+          register: mon_device
+          failed_when: mon_device.rc != 0 and "already exists" not in mon_device.stderr
+          changed_when: mon_device.rc == 0
 
     - name: Update apt cache
       command: incus exec "{{ container_name }}" -- apt update
