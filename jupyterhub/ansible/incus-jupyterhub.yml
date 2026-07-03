@@ -42,13 +42,6 @@
     - name: Install incus (Debian/Ubuntu)
       when: incus_check.rc != 0
       block:
-        - name: Update apt cache and install dependencies
-          raw: |
-            set -e
-            apt update
-            apt install -y curl gpg
-          changed_when: true
-
         - name: Add Incus repository key
           raw: |
             set -e
@@ -83,6 +76,13 @@
             echo "Architectures: {{ dpkg_arch.stdout }}" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
             echo "Signed-By: /etc/apt/keyrings/zabbly.asc" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
             echo "Enabled: yes" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
+          changed_when: true
+
+        - name: Update apt cache and install dependencies
+          raw: |
+            set -e
+            apt update
+            apt install -y curl gpg
           changed_when: true
 
         - name: Install incus package
