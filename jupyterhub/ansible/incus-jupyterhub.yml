@@ -229,6 +229,19 @@
     - name: Start Docker inside container
       command: incus exec {{ container_name }} -- systemctl enable --now docker
 
+    - name: Create Docker network for JupyterHub
+      command: incus exec {{ container_name }} -- docker network create jupyterhub-network
+      register: net_result
+      failed_when: net_result.rc != 0 and "already exists" not in net_result.stderr
+      changed_when: net_result.rc == 0
+
+    - name: Bring Docker bridge interface up
+      command: incus exec {{ container_name }} -- sh -c "
+        id=\$(docker network inspect jupyterhub-network --format '{{.Id}}' | cut -c1-12)
+        ip link set dev br-\$id up 2>/dev/null || true
+      "
+      changed_when: false
+
     - name: Write Dockerfile to host temp
       ansible.builtin.copy:
         dest: /root/dockerfile.classroom
@@ -308,7 +321,8 @@
         content: |
           c.JupyterHub.bind_url = 'http://0.0.0.0:{{ jupyterhub_port }}'
           c.JupyterHub.hub_bind_url = 'http://0.0.0.0:8081'
-          c.JupyterHub.hub_connect_url = 'http://127.0.0.1:8081'
+          c.JupyterHub.hub_bind_url = 'http://0.0.0.0:8081'
+          c.JupyterHub.hub_connect_url = 'http://172.18.0.1:8081'
           c.JupyterHub.authenticator_class = 'nativeauthenticator.NativeAuthenticator'
           c.NativeAuthenticator.check_common_password = True
           c.NativeAuthenticator.minimum_password_length = 8
@@ -321,13 +335,17 @@
 
           c.JupyterHub.spawner_class = 'dockerspawner.DockerSpawner'
           c.DockerSpawner.image = '{{ notebook_image }}'
-          c.DockerSpawner.network_mode = 'host'
+          c.DockerSpawner.network_name = 'jupyterhub-network'
           c.DockerSpawner.remove = True
+          c.DockerSpawner.use_internal_ip = True
+          c.DockerSpawner.cmd = ['/usr/local/bin/setup-and-start.sh']
           c.DockerSpawner.mem_limit = '1G'
           c.DockerSpawner.cpu_limit = 1
-          c.DockerSpawner.cmd = ['/usr/local/bin/setup-and-start.sh']
           c.DockerSpawner.volumes = {
               'jupyterhub-user-{username}': '/home/jovyan',
+          }
+          c.DockerSpawner.environment = {
+              'JUPYTER_ENABLE_LAB': 'yes',
           }
           c.DockerSpawner.environment = {
               'JUPYTER_ENABLE_LAB': 'yes',

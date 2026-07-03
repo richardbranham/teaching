@@ -164,7 +164,8 @@ c.NativeAuthenticator.tos = """
 
 c.JupyterHub.spawner_class = GwinnettDockerSpawner
 
-c.DockerSpawner.network_mode = 'host'
+c.DockerSpawner.network_name = 'jupyterhub-network'
+c.DockerSpawner.use_internal_ip = True
 
 c.DockerSpawner.cpu_limit = .5
 c.DockerSpawner.cpu_guarantee = 0.25
