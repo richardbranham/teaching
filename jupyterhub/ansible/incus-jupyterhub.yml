@@ -170,7 +170,7 @@
         incus file push -r /tmp/CIST1220_midterm_files {{ container_name }}/tmp/build/
 
     - name: Build notebook Docker image
-      command: incus exec {{ container_name }} -- docker build -t {{ notebook_image }} /tmp/build
+      command: incus exec {{ container_name }} -- docker build --no-cache -t {{ notebook_image }} /tmp/build
       changed_when: true
 
     - name: Generate default JupyterHub config
