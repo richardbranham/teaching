@@ -94,17 +94,30 @@
           raw: systemctl enable --now incus
           changed_when: true
 
-        - name: Wait for Incus socket and initialize
+        - name: Wait for Incus socket
           raw: |
-            set -e
             for i in $(seq 1 30); do
-              [ -S /var/lib/incus/unix.socket ] && break
+              [ -S /var/lib/incus/unix.socket ] && exit 0
               sleep 1
             done
-            [ -S /var/lib/incus/unix.socket ] || { echo "Incus socket not found"; exit 1; }
-            incus admin init --auto || true
-            incus storage create default dir 2>/dev/null || true
-            incus profile device add default root disk path=/ pool=default 2>/dev/null || true
+            echo "Incus socket not found"; exit 1
+          changed_when: false
+
+        - name: Initialize Incus
+          raw: incus admin init --auto
+          register: init_out
+          changed_when: init_out.rc == 0
+          failed_when: init_out.rc != 0 and "already" not in init_out.stderr
+
+        - name: Ensure storage pool exists
+          raw: |
+            incus storage list --format csv | grep -q . || incus storage create default dir
+          changed_when: true
+
+        - name: Ensure root disk device in default profile
+          raw: |
+            incus profile device list default 2>&1 | grep -q root || \
+              incus profile device add default root disk path=/ pool=default
           changed_when: true
 
     - name: Delete existing container
