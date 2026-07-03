@@ -136,6 +136,7 @@
     - name: Launch Incus container with nesting
       command: incus launch {{ incus_image }} {{ container_name }}
         --config security.nesting=true
+        --config security.privileged=true
       register: launch_result
       failed_when: launch_result.rc != 0 and "already exists" not in launch_result.stderr
       changed_when: launch_result.rc == 0
@@ -157,7 +158,6 @@
           command: incus config device add {{ container_name }} jupyterhub-data disk
             source={{ host_data_dir }}
             path={{ data_dir }}
-            shift=true
           register: data_device
           failed_when: data_device.rc != 0 and "already exists" not in data_device.stderr
           changed_when: data_device.rc == 0
