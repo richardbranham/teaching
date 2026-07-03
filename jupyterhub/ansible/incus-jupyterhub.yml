@@ -76,18 +76,22 @@
           register: dpkg_arch
           changed_when: false
 
+        - name: Remove any old Incus repo files
+          raw: rm -f /etc/apt/sources.list.d/zabbly-incus*.list /etc/apt/sources.list.d/zabbly-incus*.sources
+          changed_when: true
+
         - name: Add Incus repository
-          ansible.builtin.copy:
-            dest: /etc/apt/sources.list.d/zabbly-incus-stable.sources
-            mode: '0644'
-            content: |
-              Types: deb
-              URIs: https://pkgs.zabbly.com/incus/stable
-              Suites: {{ os_codename.stdout }}
-              Components: main
-              Architectures: {{ dpkg_arch.stdout }}
-              Signed-By: /etc/apt/keyrings/zabbly.asc
-              Enabled: yes
+          raw: |
+            cat > /etc/apt/sources.list.d/zabbly-incus-stable.sources << 'SOURCE'
+            Types: deb
+            URIs: https://pkgs.zabbly.com/incus/stable
+            Suites: {{ os_codename.stdout }}
+            Components: main
+            Architectures: {{ dpkg_arch.stdout }}
+            Signed-By: /etc/apt/keyrings/zabbly.asc
+            Enabled: yes
+            SOURCE
+          changed_when: true
 
         - name: Install incus package
           raw: |
