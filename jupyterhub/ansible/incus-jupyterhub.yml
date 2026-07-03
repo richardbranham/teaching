@@ -24,17 +24,21 @@
     - name: Install incus (Debian/Ubuntu)
       when: incus_check.rc != 0
       block:
+        - name: Update apt cache and install dependencies
+          raw: |
+            set -e
+            apt update
+            apt install -y curl gpg
+          changed_when: true
+
         - name: Add Incus repository key
           raw: |
             set -e
-            if ! command -v incus &>/dev/null; then
-              apt update && apt install -y curl gpg
-              curl -fsSL https://pkgs.zabbly.com/get.asc -o /tmp/zabbly.asc
-              gpg --show-keys --fingerprint /tmp/zabbly.asc \
-                | grep -q "4EFC 590B 9B35 F81E 19E5  6011 8590 94A0 30C7 DCF8" \
-                || { echo "GPG key fingerprint mismatch"; exit 1; }
-              sh -c 'cp /tmp/zabbly.asc /etc/apt/keyrings/zabbly.asc'
-            fi
+            curl -fsSL https://pkgs.zabbly.com/get.asc -o /tmp/zabbly.asc
+            gpg --show-keys --fingerprint /tmp/zabbly.asc \
+              | grep -q "4EFC 590B 9B35 F81E 19E5  6011 8590 94A0 30C7 DCF8" \
+              || { echo "GPG key fingerprint mismatch"; exit 1; }
+            cp /tmp/zabbly.asc /etc/apt/keyrings/zabbly.asc
           changed_when: true
 
         - name: Add Incus repository
