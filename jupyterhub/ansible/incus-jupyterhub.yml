@@ -71,9 +71,9 @@
             rm -f /etc/apt/sources.list.d/zabbly-incus*
             echo "Types: deb" > /etc/apt/sources.list.d/zabbly-incus-stable.sources
             echo "URIs: https://pkgs.zabbly.com/incus/stable" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
-            echo "Suites: {{ os_codename.stdout }}" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
+            echo "Suites: {{ os_codename.stdout | trim }}" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
             echo "Components: main" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
-            echo "Architectures: {{ dpkg_arch.stdout }}" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
+            echo "Architectures: {{ dpkg_arch.stdout | trim }}" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
             echo "Signed-By: /etc/apt/keyrings/zabbly.asc" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
             echo "Enabled: yes" >> /etc/apt/sources.list.d/zabbly-incus-stable.sources
           changed_when: true
