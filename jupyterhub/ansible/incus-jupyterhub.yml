@@ -20,15 +20,13 @@
       raw: |
         set -e
         if command -v apt &>/dev/null; then
-          apt update && apt install -y python3-six python3-pip
+          apt update && apt install -y python3-pip
         elif command -v dnf &>/dev/null; then
-          dnf install -y python3-six python3-pip
+          dnf install -y python3-pip
         elif command -v yum &>/dev/null; then
-          yum install -y python3-six python3-pip
+          yum install -y python3-pip
         fi
-        # Ensure six.moves is importable (some distros ship a broken six)
-        python3 -c "from six.moves import urllib" 2>/dev/null ||
-          pip3 install --force-reinstall six
+        python3 -m pip install --force-reinstall six 2>/dev/null || true
         python3 -c "from six.moves import urllib; print('six.moves OK')"
       changed_when: true
 
