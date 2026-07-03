@@ -418,9 +418,12 @@
       register: jh_start_result
       ignore_errors: yes
 
-    - name: Pipe admin creation script into container and execute
-      shell: |
-        cat /root/create_admin.py | incus exec {{ container_name }} -- {{ venv_dir }}/bin/python3
+    - name: Push admin creation script into container
+      command: incus file push /root/create_admin.py {{ container_name }}/tmp/create_admin.py
+      when: jh_start_result is succeeded
+
+    - name: Execute admin creation script inside container
+      command: incus exec {{ container_name }} -- {{ venv_dir }}/bin/python3 /tmp/create_admin.py
       when: jh_start_result is succeeded
 
     - name: Restart JupyterHub to pick up admin user
