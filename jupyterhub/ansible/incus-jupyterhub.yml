@@ -94,25 +94,25 @@
           raw: systemctl enable --now incus
           changed_when: true
 
-        - name: Wait for Incus socket and initialize
-          raw: |
-            for i in $(seq 1 30); do
-              [ -S /var/lib/incus/unix.socket ] && break
-              sleep 1
-            done
-            [ -S /var/lib/incus/unix.socket ] || { echo "Socket not found"; exit 1; }
-            sleep 2
-            incus admin init --auto 2>&1 || true
-            echo "INIT_DONE"
-          changed_when: true
+    - name: Wait for Incus socket and initialize
+      raw: |
+        for i in $(seq 1 30); do
+          [ -S /var/lib/incus/unix.socket ] && break
+          sleep 1
+        done
+        [ -S /var/lib/incus/unix.socket ] || { echo "Socket not found"; exit 1; }
+        sleep 2
+        incus admin init --auto 2>&1 || true
+        echo "INIT_DONE"
+      changed_when: true
 
-        - name: Debug Incus config before launch
-          raw: |
-            echo "=== STORAGE ==="
-            incus storage list
-            echo "=== PROFILE ==="
-            incus profile show default
-          changed_when: false
+    - name: Debug Incus config before launch
+      raw: |
+        echo "=== STORAGE ==="
+        incus storage list
+        echo "=== PROFILE ==="
+        incus profile show default
+      changed_when: false
 
     - name: Delete existing container
       command: incus delete {{ container_name }} --force
