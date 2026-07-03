@@ -96,12 +96,15 @@
 
         - name: Wait for Incus socket and initialize
           raw: |
+            set -e
             for i in $(seq 1 30); do
               [ -S /var/lib/incus/unix.socket ] && break
               sleep 1
             done
             [ -S /var/lib/incus/unix.socket ] || { echo "Incus socket not found"; exit 1; }
-            incus admin init --auto
+            incus admin init --auto || true
+            incus storage create default dir 2>/dev/null || true
+            incus profile device add default root disk path=/ pool=default 2>/dev/null || true
           changed_when: true
 
     - name: Delete existing container
