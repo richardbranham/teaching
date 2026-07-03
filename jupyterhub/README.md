@@ -1,5 +1,9 @@
 Incus on OVH is working.
 
+Successfully rebuilt OVH machine by:
+1.  Installed Debian from OHV console.
+2.  Ran incus-jupyterhub.yml
+
 *******************************************************************************
 Docker on Digital Ocean:
 

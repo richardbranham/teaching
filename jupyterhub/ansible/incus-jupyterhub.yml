@@ -273,6 +273,9 @@
           c.Authenticator.allow_all = True
           c.Authenticator.admin_users = {'{{ admin_user }}'}
 
+          c.JupyterHub.metrics_enabled = True
+          c.JupyterHub.metrics_endpoint_requires_auth = False
+
           c.JupyterHub.spawner_class = 'dockerspawner.DockerSpawner'
           c.DockerSpawner.image = '{{ notebook_image }}'
           c.DockerSpawner.network_name = 'jupyterhub-network'
@@ -429,12 +432,90 @@
       failed_when: proxy_result.rc != 0 and "already exists" not in proxy_result.stderr
       changed_when: proxy_result.rc == 0
 
+    # ── Monitoring stack (Prometheus + Grafana + Node Exporter) ──
+
+    - name: Create monitoring directories
+      command: incus exec {{ container_name }} -- mkdir -p /srv/monitoring/prometheus /srv/monitoring/grafana
+
+    - name: Write Prometheus config to host temp
+      ansible.builtin.copy:
+        dest: /tmp/prometheus.yml
+        content: |
+          global:
+            scrape_interval: 15s
+          scrape_configs:
+            - job_name: 'jupyterhub'
+              metrics_path: /hub/metrics
+              static_configs:
+                - targets: ['localhost:8000']
+            - job_name: 'node'
+              static_configs:
+                - targets: ['localhost:9100']
+
+    - name: Push Prometheus config into container
+      command: incus file push /tmp/prometheus.yml {{ container_name }}/srv/monitoring/prometheus.yml
+
+    - name: Remove existing Prometheus container
+      command: incus exec {{ container_name }} -- docker rm -f prometheus
+      register: prometheus_rm
+      failed_when: false
+      changed_when: prometheus_rm.rc == 0
+
+    - name: Launch Prometheus container
+      command: incus exec {{ container_name }} -- docker run -d
+        --name prometheus
+        --restart unless-stopped
+        -v /srv/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+        -v /srv/monitoring/prometheus:/prometheus
+        --network host
+        prom/prometheus
+
+    - name: Remove existing Grafana container
+      command: incus exec {{ container_name }} -- docker rm -f grafana
+      register: grafana_rm
+      failed_when: false
+      changed_when: grafana_rm.rc == 0
+
+    - name: Launch Grafana container
+      command: incus exec {{ container_name }} -- docker run -d
+        --name grafana
+        --restart unless-stopped
+        -v /srv/monitoring/grafana:/var/lib/grafana
+        --network host
+        grafana/grafana
+
+    - name: Remove existing Node Exporter container
+      command: incus exec {{ container_name }} -- docker rm -f node-exporter
+      register: node_exporter_rm
+      failed_when: false
+      changed_when: node_exporter_rm.rc == 0
+
+    - name: Launch Node Exporter container
+      command: incus exec {{ container_name }} -- docker run -d
+        --name node-exporter
+        --restart unless-stopped
+        --network host
+        prom/node-exporter
+
+    - name: Add Incus proxy device for Grafana
+      command: incus config device add {{ container_name }} proxy-grafana proxy
+        connect=tcp:127.0.0.1:3000
+        listen=tcp:0.0.0.0:3000
+      register: proxy_grafana_result
+      failed_when: proxy_grafana_result.rc != 0 and "already exists" not in proxy_grafana_result.stderr
+      changed_when: proxy_grafana_result.rc == 0
+
     - name: Display connection info
       debug:
         msg:
           - "JupyterHub is available at http://{{ container_ip.stdout | trim }}:{{ jupyterhub_port }}"
           - "Login: {{ admin_user }} / {{ admin_password }}"
           - "Users can sign up with their email address as username."
+          - ""
+          - "Monitoring:"
+          - "  Grafana: http://{{ container_ip.stdout | trim }}:3000 (admin/admin)"
+          - "  Prometheus: http://{{ container_ip.stdout | trim }}:9090"
+          - "  Node Exporter: http://{{ container_ip.stdout | trim }}:9100/metrics"
           - ""
           - "Manage the container:"
           - "  incus shell {{ container_name }}"
