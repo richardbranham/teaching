@@ -182,32 +182,43 @@
         dest: /root/create_admin.py
         mode: '0700'
         content: |
-          import bcrypt, sqlite3, os
+          import bcrypt, os
 
-          db_path = '{{ data_dir }}/jupyterhub.sqlite'
+          from sqlalchemy import create_engine
+          from sqlalchemy.orm import sessionmaker
+
+          from nativeauthenticator.orm import UserInfo
+
+          db_url = 'sqlite:///{{ data_dir }}/jupyterhub.sqlite'
           os.makedirs('{{ data_dir }}', exist_ok=True)
 
-          conn = sqlite3.connect(db_path)
-          conn.execute('''
-              CREATE TABLE IF NOT EXISTS users_info (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  username TEXT NOT NULL,
-                  password BLOB NOT NULL,
-                  is_authorized INTEGER DEFAULT 0,
-                  login_email_sent INTEGER DEFAULT 0,
-                  email TEXT,
-                  has_2fa INTEGER DEFAULT 0,
-                  otp_secret TEXT
-              )
-          ''')
+          engine = create_engine(db_url)
+          # Create users_info table if it doesn't exist (safe no-op if it does)
+          UserInfo.__table__.create(engine, checkfirst=True)
 
-          pw = bcrypt.hashpw(b'{{ admin_password }}', bcrypt.gensalt())
-          conn.execute('DELETE FROM users_info WHERE username = ?', ('{{ admin_user }}',))
-          conn.execute('INSERT INTO users_info (username, password, is_authorized) VALUES (?, ?, 1)',
-                       ('{{ admin_user }}', pw))
-          conn.commit()
-          conn.close()
-          print(f'Admin user {{ admin_user }} created in {db_path}')
+          Session = sessionmaker(bind=engine)
+          db = Session()
+
+          user = db.query(UserInfo).filter(
+              UserInfo.username == '{{ admin_user }}'
+          ).first()
+
+          if user:
+              # Update existing user's password
+              user.password = bcrypt.hashpw(
+                  b'{{ admin_password }}', bcrypt.gensalt()
+              )
+              user.is_authorized = True
+          else:
+              pw = bcrypt.hashpw(b'{{ admin_password }}', bcrypt.gensalt())
+              user = UserInfo(
+                  username='{{ admin_user }}', password=pw, is_authorized=True
+              )
+              db.add(user)
+
+          db.commit()
+          db.close()
+          print(f'Admin user {{ admin_user }} synced to users_info')
 
     - name: Write JupyterHub service file to host temp dir
       ansible.builtin.copy:
