@@ -236,11 +236,7 @@
       changed_when: net_result.rc == 0
 
     - name: Bring Docker bridge interface up
-      command: incus exec {{ container_name }} -- sh -c "
-        net_id=\$(docker network ls --filter name=jupyterhub-network -q | head -1)
-        br_name=br-\$(echo \$net_id | cut -c1-12)
-        ip link set dev \$br_name up 2>/dev/null || true
-      "
+      command: incus exec {{ container_name }} -- sh -c 'net_id=$(docker network ls --filter name=jupyterhub-network -q | head -1) && br_name=br-$(echo $net_id | cut -c1-12) && ip link set dev $br_name up 2>/dev/null || true'
       changed_when: false
 
     - name: Write Dockerfile to host temp
