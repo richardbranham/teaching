@@ -42,22 +42,31 @@
             cp /tmp/zabbly.asc /etc/apt/keyrings/zabbly.asc
           changed_when: true
 
-        - name: Add Incus repository
+        - name: Get OS codename for Incus repo
           raw: |
             set -e
-            if [ ! -f /etc/apt/sources.list.d/zabbly-incus-stable.sources ]; then
-              . /etc/os-release
-              cat > /etc/apt/sources.list.d/zabbly-incus-stable.sources << SOURCE
-            Types: deb
-            URIs: https://pkgs.zabbly.com/incus/stable
-            Suites: ${VERSION_CODENAME}
-            Components: main
-            Architectures: $(dpkg --print-architecture)
-            Signed-By: /etc/apt/keyrings/zabbly.asc
-            Enabled: yes
-            SOURCE
-            fi
-          changed_when: true
+            . /etc/os-release
+            echo -n "$VERSION_CODENAME"
+          register: os_codename
+          changed_when: false
+
+        - name: Get dpkg architecture for Incus repo
+          raw: dpkg --print-architecture
+          register: dpkg_arch
+          changed_when: false
+
+        - name: Add Incus repository
+          ansible.builtin.copy:
+            dest: /etc/apt/sources.list.d/zabbly-incus-stable.sources
+            mode: '0644'
+            content: |
+              Types: deb
+              URIs: https://pkgs.zabbly.com/incus/stable
+              Suites: {{ os_codename.stdout }}
+              Components: main
+              Architectures: {{ dpkg_arch.stdout }}
+              Signed-By: /etc/apt/keyrings/zabbly.asc
+              Enabled: yes
 
         - name: Install incus package
           raw: |
