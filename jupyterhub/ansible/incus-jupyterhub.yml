@@ -338,7 +338,13 @@
           c.JupyterHub.trust_xheaders = True
           c.JupyterHub.cookie_secret_file = '/srv/jupyterhub/jupyterhub_cookie_secret'
 
-          c.JupyterHub.spawner_class = 'dockerspawner.DockerSpawner'
+          from dockerspawner import DockerSpawner as _DockerSpawner
+
+          class _HostNetworkSpawner(_DockerSpawner):
+              async def get_ip_and_port(self):
+                  return '127.0.0.1', self.port
+
+          c.JupyterHub.spawner_class = _HostNetworkSpawner
           c.DockerSpawner.image = '{{ notebook_image }}'
           c.DockerSpawner.network_name = 'host'
           c.DockerSpawner.use_internal_ip = True
