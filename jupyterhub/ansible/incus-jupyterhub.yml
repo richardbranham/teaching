@@ -218,7 +218,7 @@
 
     - name: Install JupyterHub packages in venv
       command: incus exec "{{ container_name }}" -- "{{ venv_dir }}/bin/pip" install
-        jupyterhub jupyterlab notebook jupyterhub-nativeauthenticator
+        'jupyterhub<5' jupyterlab notebook jupyterhub-nativeauthenticator
         dockerspawner
         numpy pandas matplotlib flask jupyter-server-proxy
         fastapi uvicorn streamlit copier
@@ -329,6 +329,8 @@
           c.Authenticator.admin_users = {'{{ admin_user }}'}
 
           c.JupyterHub.authenticate_prometheus = False
+          c.JupyterHub.trust_xheaders = True
+          c.JupyterHub.cookie_secret_file = '/srv/jupyterhub/jupyterhub_cookie_secret'
 
           c.JupyterHub.spawner_class = 'dockerspawner.DockerSpawner'
           c.DockerSpawner.image = '{{ notebook_image }}'
