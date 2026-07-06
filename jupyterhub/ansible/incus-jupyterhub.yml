@@ -584,7 +584,7 @@ NGINX"
       copy:
         dest: /root/jhub-cert.txt
         content: |
-          certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us
+          incus exec {{ container_name }} -- certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us
 
     # ── Monitoring stack (Prometheus + Grafana + Node Exporter) ──
 
@@ -681,3 +681,12 @@ NGINX"
           - "  incus shell {{ container_name }}"
           - "  incus stop {{ container_name }}"
           - "  incus delete {{ container_name }} --force"
+
+    - name: ">>> Certbot instruction: run this after DNS is pointed <<<"
+      debug:
+        msg:
+          - ""
+          - "Once DNS for jhub.branham.us points to this server, obtain an SSL certificate by running:"
+          - ""
+          - "  incus exec {{ container_name }} -- certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us"
+          - ""
