@@ -256,27 +256,18 @@
           RUN mkdir -p /usr/local/bin/before-notebook.d && \
               cat > /usr/local/bin/before-notebook.d/sync_midterm.sh << 'SCRIPT'
           #!/bin/bash
-
+          USER_HOME="/home/jovyan"
           MIDTERM_SRC="/opt/CIST1220_midterm_files"
-          CIST1220_DIR="$HOME/CIST1220"
+          CIST1220_DIR="$USER_HOME/CIST1220"
 
-          MASTER_DIR="$CIST1220_DIR/midterm_project_master"
-          if [ ! -d "$MASTER_DIR" ]; then
-              mkdir -p "$MASTER_DIR" 2>/dev/null || true
-              cp -r "$MIDTERM_SRC/"* "$MASTER_DIR/" 2>/dev/null || true
+          if [ -d "$MIDTERM_SRC" ]; then
+              mkdir -p "$CIST1220_DIR/midterm_project_master" "$CIST1220_DIR/midterm_project" 2>/dev/null || true
+              cp -r "$MIDTERM_SRC/"* "$CIST1220_DIR/midterm_project_master/" 2>/dev/null || true
+              cp -r "$MIDTERM_SRC/"* "$CIST1220_DIR/midterm_project/" 2>/dev/null || true
+              chmod -R 555 "$CIST1220_DIR/midterm_project_master" 2>/dev/null || true
+              chmod -R 755 "$CIST1220_DIR/midterm_project" 2>/dev/null || true
+              chown -R 1000:100 "$CIST1220_DIR" 2>/dev/null || true
           fi
-          find "$MASTER_DIR" -type f -exec chmod 444 {} \; 2>/dev/null || true
-          find "$MASTER_DIR" -type d -exec chmod 555 {} \; 2>/dev/null || true
-
-          PROJECT_DIR="$CIST1220_DIR/midterm_project"
-          if [ ! -d "$PROJECT_DIR" ]; then
-              mkdir -p "$PROJECT_DIR" 2>/dev/null || true
-              cp -r "$MIDTERM_SRC/"* "$PROJECT_DIR/" 2>/dev/null || true
-          fi
-          find "$PROJECT_DIR" -type f -exec chmod 644 {} \; 2>/dev/null || true
-          find "$PROJECT_DIR" -type d -exec chmod 755 {} \; 2>/dev/null || true
-
-          chmod 755 "$CIST1220_DIR" 2>/dev/null || true
           SCRIPT
           RUN chmod 755 /usr/local/bin/before-notebook.d/sync_midterm.sh
           USER 1000
@@ -347,6 +338,7 @@
           c.DockerSpawner.network_name = 'host'
           c.DockerSpawner.use_internal_ip = True
           c.DockerSpawner.remove = True
+          c.DockerSpawner.cmd = ['start-singleuser.py']
           c.DockerSpawner.mem_limit = '1G'
           c.DockerSpawner.cpu_limit = 1
           c.DockerSpawner.volumes = {
