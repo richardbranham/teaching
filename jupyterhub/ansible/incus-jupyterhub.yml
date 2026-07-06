@@ -15,6 +15,7 @@
     admin_password: ChangeMe1@
     host_data_dir: /srv/jupyterhub-data
     host_monitoring_dir: /srv/monitoring-data
+    fresh_install: false
 
   tasks:
     # Run before any module tasks — raw avoids needing Python module infrastructure
@@ -413,9 +414,10 @@
           db.close()
           print(f'Admin user {{ admin_user }} synced to users_info')
 
-    - name: Remove old JupyterHub database from previous version
+    - name: Remove old JupyterHub database (fresh install only)
       command: incus exec {{ container_name }} -- rm -f {{ data_dir }}/jupyterhub.sqlite
       changed_when: true
+      when: fresh_install | bool
 
     - name: Write JupyterHub service file to host temp dir
       ansible.builtin.copy:
@@ -450,22 +452,30 @@
 
     - name: Push admin creation script into container
       command: incus file push /root/create_admin.py {{ container_name }}/tmp/create_admin.py
-      when: jh_start_result is succeeded
+      when:
+        - jh_start_result is succeeded
+        - fresh_install | bool
 
     - name: Execute admin creation script inside container
       command: incus exec {{ container_name }} -- {{ venv_dir }}/bin/python3 /tmp/create_admin.py
-      when: jh_start_result is succeeded
+      when:
+        - jh_start_result is succeeded
+        - fresh_install | bool
 
     - name: Restart JupyterHub to pick up admin user
       command: incus exec {{ container_name }} -- systemctl restart jupyterhub
-      when: jh_start_result is succeeded
+      when:
+        - jh_start_result is succeeded
+        - fresh_install | bool
 
     - name: Wait for JupyterHub after restart
       command: incus exec "{{ container_name }}" -- sh -c
         'i=0; while [ "$i" -lt 15 ]; do systemctl is-active jupyterhub && exit 0; i=$((i + 1)); sleep 2; done; exit 1'
       register: jh_restart_result
       ignore_errors: yes
-      when: jh_start_result is succeeded
+      when:
+        - jh_start_result is succeeded
+        - fresh_install | bool
 
     - name: Diagnose JupyterHub service failure
       when: jh_start_result is failed
