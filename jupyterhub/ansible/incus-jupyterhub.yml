@@ -324,9 +324,8 @@
           _na_handlers.LoginHandler._render = _render_patched
 
           c.JupyterHub.bind_url = 'http://0.0.0.0:{{ jupyterhub_port }}'
-          c.JupyterHub.hub_bind_url = 'http://0.0.0.0:8081'
-          c.JupyterHub.hub_bind_url = 'http://0.0.0.0:8081'
-          c.JupyterHub.hub_connect_url = 'http://localhost:8081'
+          c.JupyterHub.hub_bind_url = 'http://127.0.0.1:8081'
+          c.JupyterHub.hub_connect_url = 'http://127.0.0.1:8081'
           c.JupyterHub.authenticator_class = 'nativeauthenticator.NativeAuthenticator'
           c.NativeAuthenticator.check_common_password = True
           c.NativeAuthenticator.minimum_password_length = 8
