@@ -218,7 +218,7 @@
 
     - name: Install JupyterHub packages in venv
       command: incus exec "{{ container_name }}" -- "{{ venv_dir }}/bin/pip" install
-        'jupyterhub<5' jupyterlab notebook jupyterhub-nativeauthenticator
+        jupyterhub jupyterlab notebook jupyterhub-nativeauthenticator
         dockerspawner
         numpy pandas matplotlib flask jupyter-server-proxy
         fastapi uvicorn streamlit copier
@@ -316,6 +316,13 @@
       ansible.builtin.copy:
         dest: /tmp/jupyterhub_config_append.py
         content: |
+          import nativeauthenticator.handlers as _na_handlers
+
+          _render_orig = _na_handlers.LoginHandler._render
+          def _render_patched(self, login_error=None, username=None, **kwargs):
+              return _render_orig(self, login_error=login_error, username=username)
+          _na_handlers.LoginHandler._render = _render_patched
+
           c.JupyterHub.bind_url = 'http://0.0.0.0:{{ jupyterhub_port }}'
           c.JupyterHub.hub_bind_url = 'http://0.0.0.0:8081'
           c.JupyterHub.hub_bind_url = 'http://0.0.0.0:8081'
@@ -403,6 +410,10 @@
           db.commit()
           db.close()
           print(f'Admin user {{ admin_user }} synced to users_info')
+
+    - name: Remove old JupyterHub database from previous version
+      command: incus exec {{ container_name }} -- rm -f {{ data_dir }}/jupyterhub.sqlite
+      changed_when: true
 
     - name: Write JupyterHub service file to host temp dir
       ansible.builtin.copy:
