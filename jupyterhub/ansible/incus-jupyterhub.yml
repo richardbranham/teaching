@@ -341,6 +341,7 @@
           c.JupyterHub.spawner_class = 'dockerspawner.DockerSpawner'
           c.DockerSpawner.image = '{{ notebook_image }}'
           c.DockerSpawner.network_name = 'host'
+          c.DockerSpawner.use_internal_ip = True
           c.DockerSpawner.remove = True
           c.DockerSpawner.cmd = ['/usr/local/bin/setup-and-start.sh']
           c.DockerSpawner.mem_limit = '1G'
