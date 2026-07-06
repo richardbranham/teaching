@@ -339,7 +339,7 @@
           c.DockerSpawner.mem_limit = '1G'
           c.DockerSpawner.cpu_limit = 1
           c.DockerSpawner.volumes = {
-              'jupyterhub-user-{username}': '/home/jovyan',
+              '/srv/jupyterhub/users/{username}': '/home/jovyan',
           }
           c.DockerSpawner.environment = {
               'JUPYTER_ENABLE_LAB': 'yes',

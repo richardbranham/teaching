@@ -1,8 +1,10 @@
 Incus on OVH is working.
 
+Prometheus and Grafana are installed.
+
 Successfully rebuilt OVH machine by:
 1.  Installed Debian from OHV console.
-2.  Ran incus-jupyterhub.yml
+2.  Ran incus-jupyterhub.ymlj
 
 *******************************************************************************
 Docker on Digital Ocean:
