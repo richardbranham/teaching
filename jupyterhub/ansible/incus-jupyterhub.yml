@@ -201,6 +201,7 @@
         python3 python3-pip python3-venv
         nodejs npm sqlite3 vim curl less iproute2 net-tools
         ca-certificates gnupg lsb-release
+        nginx certbot python3-certbot-nginx
 
     - name: Install Docker inside container
       command: incus exec {{ container_name }} -- sh -c
@@ -517,6 +518,74 @@
       failed_when: proxy_result.rc != 0 and "already exists" not in proxy_result.stderr
       changed_when: proxy_result.rc == 0
 
+    # ── Nginx reverse proxy + SSL ──
+
+    - name: Create nginx config directory
+      command: incus exec {{ container_name }} -- mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+
+    - name: Write nginx reverse proxy config
+      command: incus exec {{ container_name }} -- sh -c "cat > /etc/nginx/sites-available/jupyterhub << 'NGINX'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name jhub.branham.us;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name jhub.branham.us;
+
+    ssl_certificate /etc/letsencrypt/live/jhub.branham.us/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/jhub.branham.us/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:{{ jupyterhub_port }};
+
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \"upgrade\";
+    }
+}
+NGINX"
+
+    - name: Enable nginx site
+      command: incus exec {{ container_name }} -- ln -sf /etc/nginx/sites-available/jupyterhub /etc/nginx/sites-enabled/jupyterhub
+
+    - name: Remove default nginx site
+      command: incus exec {{ container_name }} -- rm -f /etc/nginx/sites-enabled/default
+
+    - name: Start and enable nginx
+      command: incus exec {{ container_name }} -- systemctl enable --now nginx
+
+    - name: Add Incus proxy device for HTTP
+      command: incus config device add {{ container_name }} proxy-http proxy
+        connect=tcp:127.0.0.1:80
+        listen=tcp:0.0.0.0:80
+      register: proxy_http_result
+      failed_when: proxy_http_result.rc != 0 and "already exists" not in proxy_http_result.stderr
+      changed_when: proxy_http_result.rc == 0
+
+    - name: Add Incus proxy device for HTTPS
+      command: incus config device add {{ container_name }} proxy-https proxy
+        connect=tcp:127.0.0.1:443
+        listen=tcp:0.0.0.0:443
+      register: proxy_https_result
+      failed_when: proxy_https_result.rc != 0 and "already exists" not in proxy_https_result.stderr
+      changed_when: proxy_https_result.rc == 0
+
+    - name: Write certbot command for future reference
+      copy:
+        dest: /root/jhub-cert.txt
+        content: |
+          certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us
+
     # ── Monitoring stack (Prometheus + Grafana + Node Exporter) ──
 
     - name: Create monitoring directories
@@ -599,6 +668,9 @@
           - "JupyterHub is available at http://{{ container_ip.stdout | trim }}:{{ jupyterhub_port }}"
           - "Login: {{ admin_user }} / {{ admin_password }}"
           - "Users can sign up with their email address as username."
+          - ""
+          - "After DNS points jhub.branham.us here, run certbot:"
+          - "  incus exec {{ container_name }} -- certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us"
           - ""
           - "Monitoring:"
           - "  Grafana: http://{{ container_ip.stdout | trim }}:3000 (admin/admin)"
