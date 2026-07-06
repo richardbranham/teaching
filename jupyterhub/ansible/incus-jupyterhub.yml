@@ -327,7 +327,7 @@
           c.JupyterHub.trust_xheaders = True
           c.JupyterHub.cookie_secret_file = '/srv/jupyterhub/jupyterhub_cookie_secret'
 
-          import os
+          import hashlib, os
           from dockerspawner import DockerSpawner as _DockerSpawner
 
           class _HostNetworkSpawner(_DockerSpawner):
@@ -335,6 +335,10 @@
                   return '127.0.0.1', self.port
 
               async def start(self):
+                  # Unique port per user to avoid host-networking conflicts
+                  digest = hashlib.sha256(self.user.name.encode()).hexdigest()
+                  offset = int(digest[:8], 16) % 60000
+                  self.port = 10000 + offset
                   home = '/srv/jupyterhub/users/' + self.escaped_name
                   os.makedirs(home, exist_ok=True)
                   os.chown(home, 1000, 100)
@@ -350,9 +354,6 @@
           c.DockerSpawner.cpu_limit = 1
           c.DockerSpawner.volumes = {
               '/srv/jupyterhub/users/{username}': '/home/jovyan',
-          }
-          c.DockerSpawner.environment = {
-              'JUPYTER_ENABLE_LAB': 'yes',
           }
           c.DockerSpawner.environment = {
               'JUPYTER_ENABLE_LAB': 'yes',
