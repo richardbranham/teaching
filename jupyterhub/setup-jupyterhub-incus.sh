@@ -14,8 +14,7 @@ incus exec $CONTAINER -- apt upgrade -y
 echo "=== Installing system packages ==="
 incus exec $CONTAINER -- apt install -y \
   python3 python3-pip python3-venv \
-  nodejs npm sqlite3 vim \
-  nginx certbot python3-certbot-nginx
+  nodejs npm sqlite3 vim
 
 echo "=== Installing configurable-http-proxy ==="
 incus exec $CONTAINER -- npm install -g configurable-http-proxy
@@ -75,8 +74,9 @@ incus config device add $CONTAINER proxy-jupyterhub proxy \
   connect=tcp:127.0.0.1:$JUPYTERHUB_PORT \
   listen=tcp:0.0.0.0:$JUPYTERHUB_PORT
 
-echo "=== Setting up nginx reverse proxy ==="
-incus exec $CONTAINER -- sh -c "cat > /etc/nginx/sites-available/jupyterhub << 'NGINX'
+echo "=== Setting up host nginx reverse proxy ==="
+CONTAINER_IP=$(incus list "$CONTAINER" --format csv -c 4 | head -1 | awk '{print $1}')
+cat > /etc/nginx/sites-available/jupyterhub << NGINX
 server {
     listen 80;
     listen [::]:80;
@@ -93,7 +93,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/jhub.branham.us/privkey.pem;
 
     location / {
-        proxy_pass http://127.0.0.1:$JUPYTERHUB_PORT;
+        proxy_pass http://$CONTAINER_IP:$JUPYTERHUB_PORT;
 
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -102,26 +102,18 @@ server {
 
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection \"upgrade\";
+        proxy_set_header Connection "upgrade";
     }
 }
-NGINX"
+NGINX
 
-incus exec $CONTAINER -- ln -sf /etc/nginx/sites-available/jupyterhub /etc/nginx/sites-enabled/jupyterhub
-incus exec $CONTAINER -- rm -f /etc/nginx/sites-enabled/default
-incus exec $CONTAINER -- systemctl enable --now nginx
-
-echo "=== Adding Incus proxy devices for HTTP/HTTPS ==="
-incus config device add $CONTAINER proxy-http proxy \
-  connect=tcp:127.0.0.1:80 \
-  listen=tcp:0.0.0.0:80 || echo "proxy-http may already exist"
-incus config device add $CONTAINER proxy-https proxy \
-  connect=tcp:127.0.0.1:443 \
-  listen=tcp:0.0.0.0:443 || echo "proxy-https may already exist"
+ln -sf /etc/nginx/sites-available/jupyterhub /etc/nginx/sites-enabled/jupyterhub
+rm -f /etc/nginx/sites-enabled/default
+systemctl reload nginx
 
 echo ""
 echo "=== IMPORTANT: Once DNS points jhub.branham.us to this server, run: ==="
-echo "  incus exec $CONTAINER -- certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us"
+echo "  certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us"
 echo ""
 
 echo "=== Status ==="

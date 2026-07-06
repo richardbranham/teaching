@@ -201,7 +201,6 @@
         python3 python3-pip python3-venv
         nodejs npm sqlite3 vim curl less iproute2 net-tools
         ca-certificates gnupg lsb-release
-        nginx certbot python3-certbot-nginx
 
     - name: Install Docker inside container
       command: incus exec {{ container_name }} -- sh -c
@@ -518,14 +517,15 @@
       failed_when: proxy_result.rc != 0 and "already exists" not in proxy_result.stderr
       changed_when: proxy_result.rc == 0
 
-    # ── Nginx reverse proxy + SSL ──
+    # ── Host nginx reverse proxy + SSL ──
 
-    - name: Create nginx config directory
-      command: incus exec {{ container_name }} -- mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+    - name: Install certbot on host
+      raw: apt install -y certbot python3-certbot-nginx
+      changed_when: true
 
-    - name: Write nginx reverse proxy config to host temp
+    - name: Write nginx reverse proxy config on host
       copy:
-        dest: /tmp/nginx-jupyterhub
+        dest: /etc/nginx/sites-available/jupyterhub
         content: |
           server {
               listen 80;
@@ -543,7 +543,7 @@
               ssl_certificate_key /etc/letsencrypt/live/jhub.branham.us/privkey.pem;
 
               location / {
-                  proxy_pass http://127.0.0.1:{{ jupyterhub_port }};
+                  proxy_pass http://{{ container_ip.stdout | trim }}:{{ jupyterhub_port }};
 
                   proxy_set_header Host $host;
                   proxy_set_header X-Real-IP $remote_addr;
@@ -556,39 +556,27 @@
               }
           }
 
-    - name: Push nginx config into container
-      command: incus file push /tmp/nginx-jupyterhub {{ container_name }}/etc/nginx/sites-available/jupyterhub
+    - name: Enable nginx site on host
+      file:
+        src: /etc/nginx/sites-available/jupyterhub
+        dest: /etc/nginx/sites-enabled/jupyterhub
+        state: link
 
-    - name: Enable nginx site
-      command: incus exec {{ container_name }} -- ln -sf /etc/nginx/sites-available/jupyterhub /etc/nginx/sites-enabled/jupyterhub
+    - name: Remove default nginx site on host
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
 
-    - name: Remove default nginx site
-      command: incus exec {{ container_name }} -- rm -f /etc/nginx/sites-enabled/default
-
-    - name: Start and enable nginx
-      command: incus exec {{ container_name }} -- systemctl enable --now nginx
-
-    - name: Add Incus proxy device for HTTP
-      command: incus config device add {{ container_name }} proxy-http proxy
-        connect=tcp:127.0.0.1:80
-        listen=tcp:0.0.0.0:80
-      register: proxy_http_result
-      failed_when: proxy_http_result.rc != 0 and "already exists" not in proxy_http_result.stderr
-      changed_when: proxy_http_result.rc == 0
-
-    - name: Add Incus proxy device for HTTPS
-      command: incus config device add {{ container_name }} proxy-https proxy
-        connect=tcp:127.0.0.1:443
-        listen=tcp:0.0.0.0:443
-      register: proxy_https_result
-      failed_when: proxy_https_result.rc != 0 and "already exists" not in proxy_https_result.stderr
-      changed_when: proxy_https_result.rc == 0
+    - name: Reload host nginx
+      service:
+        name: nginx
+        state: reloaded
 
     - name: Write certbot command for future reference
       copy:
         dest: /root/jhub-cert.txt
         content: |
-          incus exec {{ container_name }} -- certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us
+          certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us
 
     # ── Monitoring stack (Prometheus + Grafana + Node Exporter) ──
 
@@ -674,7 +662,7 @@
           - "Users can sign up with their email address as username."
           - ""
           - "After DNS points jhub.branham.us here, run certbot:"
-          - "  incus exec {{ container_name }} -- certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us"
+          - "  certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us"
           - ""
           - "Monitoring:"
           - "  Grafana: http://{{ container_ip.stdout | trim }}:3000 (admin/admin)"
@@ -692,5 +680,5 @@
           - ""
           - "Once DNS for jhub.branham.us points to this server, obtain an SSL certificate by running:"
           - ""
-          - "  incus exec {{ container_name }} -- certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us"
+          - "  certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us"
           - ""
