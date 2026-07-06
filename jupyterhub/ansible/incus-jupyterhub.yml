@@ -253,8 +253,7 @@
               chown -R 1000:100 /tmp/jupyter-runtime /tmp/jupyter-config /tmp/xdg
           COPY CIST1220_midterm_files /opt/CIST1220_midterm_files/
           RUN chown -R 1000:100 /opt/CIST1220_midterm_files
-          RUN mkdir -p /usr/local/bin/before-notebook.d && \
-              cat > /usr/local/bin/before-notebook.d/sync_midterm.sh << 'SCRIPT'
+          RUN cat > /usr/local/bin/setup-and-start.sh << 'SCRIPT'
           #!/bin/bash
           USER_HOME="/home/jovyan"
           MIDTERM_SRC="/opt/CIST1220_midterm_files"
@@ -266,10 +265,11 @@
               cp -r "$MIDTERM_SRC/"* "$CIST1220_DIR/midterm_project/" 2>/dev/null || true
               chmod -R 555 "$CIST1220_DIR/midterm_project_master" 2>/dev/null || true
               chmod -R 755 "$CIST1220_DIR/midterm_project" 2>/dev/null || true
-              chown -R 1000:100 "$CIST1220_DIR" 2>/dev/null || true
           fi
+
+          exec jupyterhub-singleuser "$@"
           SCRIPT
-          RUN chmod 755 /usr/local/bin/before-notebook.d/sync_midterm.sh
+          RUN chmod 755 /usr/local/bin/setup-and-start.sh
           USER 1000
           RUN pip install numpy pandas matplotlib flask jupyter-server-proxy \
               fastapi uvicorn streamlit jupyterlab jupyterhub copier
@@ -327,18 +327,25 @@
           c.JupyterHub.trust_xheaders = True
           c.JupyterHub.cookie_secret_file = '/srv/jupyterhub/jupyterhub_cookie_secret'
 
+          import os
           from dockerspawner import DockerSpawner as _DockerSpawner
 
           class _HostNetworkSpawner(_DockerSpawner):
               async def get_ip_and_port(self):
                   return '127.0.0.1', self.port
 
+              async def start(self):
+                  home = '/srv/jupyterhub/users/' + self.escaped_name
+                  os.makedirs(home, exist_ok=True)
+                  os.chown(home, 1000, 100)
+                  return await super().start()
+
           c.JupyterHub.spawner_class = _HostNetworkSpawner
           c.DockerSpawner.image = '{{ notebook_image }}'
           c.DockerSpawner.network_name = 'host'
           c.DockerSpawner.use_internal_ip = True
           c.DockerSpawner.remove = True
-          c.DockerSpawner.cmd = ['start-singleuser.py']
+          c.DockerSpawner.cmd = ['/usr/local/bin/setup-and-start.sh']
           c.DockerSpawner.mem_limit = '1G'
           c.DockerSpawner.cpu_limit = 1
           c.DockerSpawner.volumes = {
