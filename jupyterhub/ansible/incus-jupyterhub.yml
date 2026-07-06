@@ -348,7 +348,6 @@
           c.DockerSpawner.network_name = 'host'
           c.DockerSpawner.use_internal_ip = True
           c.DockerSpawner.remove = True
-          c.DockerSpawner.cmd = []
           c.DockerSpawner.mem_limit = '1G'
           c.DockerSpawner.cpu_limit = 1
           c.DockerSpawner.volumes = {
