@@ -16,6 +16,7 @@
     host_data_dir: /srv/jupyterhub-data
     host_monitoring_dir: /srv/monitoring-data
     fresh_install: false
+    jupyterhub_api_token: "{{ lookup('ansible.builtin.password', '/home/richard-branham/.jupyterhub_api_token', length=32, chars='ascii_letters,digits') }}"
 
   tasks:
     # Run before any module tasks — raw avoids needing Python module infrastructure
@@ -222,7 +223,7 @@
         jupyterhub jupyterlab notebook jupyterhub-nativeauthenticator
         dockerspawner
         numpy pandas matplotlib flask jupyter-server-proxy
-        fastapi uvicorn streamlit copier
+        fastapi uvicorn streamlit copier jupyterhub-idle-culler
 
     - name: Create required directories
       command: incus exec {{ container_name }} -- mkdir -p /etc/jupyterhub {{ data_dir }} {{ data_dir }}/users
@@ -327,6 +328,7 @@
           c.JupyterHub.authenticate_prometheus = False
           c.JupyterHub.trust_xheaders = True
           c.JupyterHub.cookie_secret_file = '/srv/jupyterhub/jupyterhub_cookie_secret'
+          c.JupyterHub.api_tokens = {'{{ jupyterhub_api_token }}': 'idle-culler'}
 
           import hashlib, os
           from dockerspawner import DockerSpawner as _DockerSpawner
@@ -508,6 +510,56 @@
         - name: Fail with diagnostic info
           fail:
             msg: "JupyterHub service failed to start. Check the output above for details."
+
+    # ── Idle culler (shut down containers idle >15 min, check every 1 min) ──
+
+    - name: Write idle culler token file inside container
+      command: incus exec {{ container_name }} -- sh -c
+        "echo '{{ jupyterhub_api_token }}' > {{ data_dir }}/idle_culler_token"
+
+    - name: Write idle culler systemd service to host temp
+      copy:
+        dest: /tmp/jupyterhub-idle-culler.service
+        content: |
+          [Unit]
+          Description=JupyterHub Idle Culler
+          After=jupyterhub.service
+
+          [Service]
+          Type=oneshot
+          User=root
+          Environment=JUPYTERHUB_API_TOKEN={{ jupyterhub_api_token }}
+          ExecStart={{ venv_dir }}/bin/jupyterhub-idle-culler
+            --url=http://127.0.0.1:{{ jupyterhub_port }}
+            --timeout=900
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Push idle culler service into container
+      command: incus file push /tmp/jupyterhub-idle-culler.service
+        {{ container_name }}/etc/systemd/system/jupyterhub-idle-culler.service
+
+    - name: Write idle culler systemd timer to host temp
+      copy:
+        dest: /tmp/jupyterhub-idle-culler.timer
+        content: |
+          [Unit]
+          Description=Run JupyterHub Idle Culler every minute
+
+          [Timer]
+          OnCalendar=*:0/1
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: Push idle culler timer into container
+      command: incus file push /tmp/jupyterhub-idle-culler.timer
+        {{ container_name }}/etc/systemd/system/jupyterhub-idle-culler.timer
+
+    - name: Enable and start idle culler timer
+      command: incus exec {{ container_name }} -- sh -c
+        "systemctl daemon-reload && systemctl enable --now jupyterhub-idle-culler.timer"
 
     - name: Add Incus proxy device
       command: incus config device add {{ container_name }} proxy-jupyterhub proxy

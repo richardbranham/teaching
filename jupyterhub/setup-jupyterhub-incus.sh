@@ -26,13 +26,17 @@ incus exec $CONTAINER -- $VENV/bin/pip install \
   jupyterhub \
   jupyterlab \
   notebook \
-  jupyterhub-nativeauthenticator
+  jupyterhub-nativeauthenticator \
+  jupyterhub-idle-culler
 
 echo "=== Generating JupyterHub config ==="
 incus exec $CONTAINER -- $VENV/bin/jupyterhub --generate-config -f /etc/jupyterhub/jupyterhub_config.py
 
+# Generate idle culler API token
+IDLE_CULLER_TOKEN=$(openssl rand -hex 16)
+
 # Configure basic settings
-incus exec $CONTAINER -- sh -c "cat >> /etc/jupyterhub/jupyterhub_config.py << 'EOF'
+incus exec $CONTAINER -- sh -c "cat >> /etc/jupyterhub/jupyterhub_config.py << EOF
 
 # --- Custom settings ---
 c.JupyterHub.bind_url = 'http://0.0.0.0:$JUPYTERHUB_PORT'
@@ -42,6 +46,7 @@ c.NativeAuthenticator.check_common_password = True
 c.NativeAuthenticator.minimum_password_length = 8
 c.JupyterHub.spawner_class = 'simple'
 c.SimpleLocalProcessSpawner.home_dir_template = '/home/{username}'
+c.JupyterHub.api_tokens = {'$IDLE_CULLER_TOKEN': 'idle-culler'}
 EOF"
 
 echo "=== Creating admin user ==="
@@ -115,6 +120,41 @@ echo ""
 echo "=== IMPORTANT: Once DNS points jhub.branham.us to this server, run: ==="
 echo "  certbot --nginx -d jhub.branham.us --non-interactive --agree-tos --email admin@branham.us"
 echo ""
+
+echo "=== Setting up idle culler ==="
+# Write the token file for reference
+incus exec $CONTAINER -- sh -c "echo '$IDLE_CULLER_TOKEN' > $DATA_DIR/idle_culler_token"
+
+# Create systemd service
+incus exec $CONTAINER -- sh -c "cat > /etc/systemd/system/jupyterhub-idle-culler.service << CULLER
+[Unit]
+Description=JupyterHub Idle Culler
+After=jupyterhub.service
+
+[Service]
+Type=oneshot
+User=root
+Environment=JUPYTERHUB_API_TOKEN=$IDLE_CULLER_TOKEN
+ExecStart=$VENV/bin/jupyterhub-idle-culler --url=http://127.0.0.1:$JUPYTERHUB_PORT --timeout=900
+
+[Install]
+WantedBy=multi-user.target
+CULLER"
+
+# Create systemd timer (every 1 minute)
+incus exec $CONTAINER -- sh -c "cat > /etc/systemd/system/jupyterhub-idle-culler.timer << TIMER
+[Unit]
+Description=Run JupyterHub Idle Culler every minute
+
+[Timer]
+OnCalendar=*:0/1
+
+[Install]
+WantedBy=timers.target
+TIMER"
+
+incus exec $CONTAINER -- systemctl daemon-reload
+incus exec $CONTAINER -- systemctl enable --now jupyterhub-idle-culler.timer
 
 echo "=== Status ==="
 sleep 2
