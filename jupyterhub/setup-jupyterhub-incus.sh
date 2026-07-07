@@ -46,7 +46,7 @@ c.NativeAuthenticator.check_common_password = True
 c.NativeAuthenticator.minimum_password_length = 8
 c.JupyterHub.spawner_class = 'simple'
 c.SimpleLocalProcessSpawner.home_dir_template = '/home/{username}'
-c.JupyterHub.api_tokens = {'$IDLE_CULLER_TOKEN': 'idle-culler'}
+c.JupyterHub.service_tokens = {'$IDLE_CULLER_TOKEN': 'idle-culler'}
 EOF"
 
 echo "=== Creating admin user ==="

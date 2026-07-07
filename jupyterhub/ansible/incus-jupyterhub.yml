@@ -328,7 +328,7 @@
           c.JupyterHub.authenticate_prometheus = False
           c.JupyterHub.trust_xheaders = True
           c.JupyterHub.cookie_secret_file = '/srv/jupyterhub/jupyterhub_cookie_secret'
-          c.JupyterHub.api_tokens = {'{{ jupyterhub_api_token }}': 'idle-culler'}
+          c.JupyterHub.service_tokens = {'{{ jupyterhub_api_token }}': 'idle-culler'}
 
           import hashlib, os
           from dockerspawner import DockerSpawner as _DockerSpawner
