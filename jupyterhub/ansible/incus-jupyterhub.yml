@@ -262,11 +262,16 @@
           CIST1220_DIR="$USER_HOME/CIST1220"
 
           if [ -d "$MIDTERM_SRC" ]; then
-              mkdir -p "$CIST1220_DIR/midterm_project_master" "$CIST1220_DIR/midterm_project" 2>/dev/null || true
-              cp -r "$MIDTERM_SRC/"* "$CIST1220_DIR/midterm_project_master/" 2>/dev/null || true
-              cp -r "$MIDTERM_SRC/"* "$CIST1220_DIR/midterm_project/" 2>/dev/null || true
-              chmod -R 555 "$CIST1220_DIR/midterm_project_master" 2>/dev/null || true
-              chmod -R 755 "$CIST1220_DIR/midterm_project" 2>/dev/null || true
+              mkdir -p "$CIST1220_DIR/midterm_project_master" 2>/dev/null || true
+              rm -rf "$CIST1220_DIR/midterm_project_master"
+              cp -r "$MIDTERM_SRC" "$CIST1220_DIR/midterm_project_master" 2>/dev/null || true
+              find "$CIST1220_DIR/midterm_project_master" -type d -exec chmod 555 {} + 2>/dev/null || true
+              find "$CIST1220_DIR/midterm_project_master" -type f -exec chmod 444 {} + 2>/dev/null || true
+              if [ ! -d "$CIST1220_DIR/midterm_project" ]; then
+                  cp -r "$MIDTERM_SRC" "$CIST1220_DIR/midterm_project" 2>/dev/null || true
+                  find "$CIST1220_DIR/midterm_project" -type d -exec chmod 755 {} + 2>/dev/null || true
+                  find "$CIST1220_DIR/midterm_project" -type f -exec chmod 644 {} + 2>/dev/null || true
+              fi
           fi
 
           exec jupyterhub-singleuser "$@"
