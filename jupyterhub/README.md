@@ -4,7 +4,9 @@ Prometheus and Grafana are installed.
 
 Successfully rebuilt OVH machine by:
 1.  Installed Debian from OHV console.
-2.  Ran incus-jupyterhub.ymlj
+2.  Ran incus-jupyterhub.yml
+
+Persistent DB and user directories are working.
 
 *******************************************************************************
 Docker on Digital Ocean:
