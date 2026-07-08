@@ -241,6 +241,11 @@
       command: incus exec {{ container_name }} -- sh -c 'net_id=$(docker network ls --filter name=jupyterhub-network -q | head -1) && br_name=br-$(echo $net_id | cut -c1-12) && ip link set dev $br_name up 2>/dev/null || true'
       changed_when: false
 
+    - name: Get Docker network gateway IP
+      command: incus exec {{ container_name }} -- docker network inspect jupyterhub-network --format '{{"{{"}}(index .IPAM.Config 0).Gateway{{"}}"}}'
+      register: network_gateway
+      changed_when: false
+
     - name: Write Dockerfile to host temp
       ansible.builtin.copy:
         dest: /root/dockerfile.classroom
@@ -262,11 +267,10 @@
           CIST1220_DIR="$USER_HOME/CIST1220"
 
           if [ -d "$MIDTERM_SRC" ]; then
-              mkdir -p "$CIST1220_DIR/midterm_project_master" 2>/dev/null || true
-              rm -rf "$CIST1220_DIR/midterm_project_master"
-              cp -r "$MIDTERM_SRC" "$CIST1220_DIR/midterm_project_master" 2>/dev/null || true
-              find "$CIST1220_DIR/midterm_project_master" -type d -exec chmod 555 {} + 2>/dev/null || true
-              find "$CIST1220_DIR/midterm_project_master" -type f -exec chmod 444 {} + 2>/dev/null || true
+              cp -r "$MIDTERM_SRC" "${CIST1220_DIR}/midterm_project_master.new" 2>/dev/null || true
+              find "${CIST1220_DIR}/midterm_project_master.new" -type d -exec chmod 555 {} + 2>/dev/null || true
+              find "${CIST1220_DIR}/midterm_project_master.new" -type f -exec chmod 444 {} + 2>/dev/null || true
+              mv "${CIST1220_DIR}/midterm_project_master.new" "$CIST1220_DIR/midterm_project_master" 2>/dev/null || true
               if [ ! -d "$CIST1220_DIR/midterm_project" ]; then
                   cp -r "$MIDTERM_SRC" "$CIST1220_DIR/midterm_project" 2>/dev/null || true
                   find "$CIST1220_DIR/midterm_project" -type d -exec chmod 755 {} + 2>/dev/null || true
@@ -320,8 +324,8 @@
           _na_handlers.LoginHandler._render = _render_patched
 
           c.JupyterHub.bind_url = 'http://0.0.0.0:{{ jupyterhub_port }}'
-          c.JupyterHub.hub_bind_url = 'http://127.0.0.1:8081'
-          c.JupyterHub.hub_connect_url = 'http://127.0.0.1:8081'
+          c.JupyterHub.hub_bind_url = 'http://0.0.0.0:8081'
+          c.JupyterHub.hub_connect_url = 'http://{{ network_gateway.stdout | trim }}:8081'
           c.JupyterHub.authenticator_class = 'nativeauthenticator.NativeAuthenticator'
           c.NativeAuthenticator.check_common_password = True
           c.NativeAuthenticator.minimum_password_length = 8
