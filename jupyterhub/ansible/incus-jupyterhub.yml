@@ -520,6 +520,44 @@
           fail:
             msg: "JupyterHub service failed to start. Check the output above for details."
 
+    # ── Password reset utility script ──
+
+    - name: Write password reset script to host temp
+      copy:
+        dest: /tmp/reset_password.py
+        mode: '0700'
+        content: |
+          #!/usr/bin/env python3
+          """Reset a JupyterHub user's password via the NativeAuthenticator DB.
+          Usage: incus exec jupyterhub -- /opt/jupyterhub/bin/python3 /tmp/reset_password.py <username> [new_password]
+          """
+          import bcrypt, sqlite3, sys
+
+          DB = '/srv/jupyterhub/jupyterhub.sqlite'
+
+          if len(sys.argv) < 2:
+              print(f'Usage: {sys.argv[0]} <username> [new_password]')
+              sys.exit(1)
+
+          username = sys.argv[1]
+          password = sys.argv[2] if len(sys.argv) > 2 else 'ChangeMe1@'
+
+          conn = sqlite3.connect(DB)
+          row = conn.execute('SELECT password FROM users_info WHERE username=?', (username,)).fetchone()
+          if not row:
+              print(f'User {username!r} not found')
+              conn.close()
+              sys.exit(1)
+
+          pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+          conn.execute('UPDATE users_info SET password=? WHERE username=?', (pw, username))
+          conn.commit()
+          conn.close()
+          print(f'Password for {username} updated to: {password}')
+
+    - name: Push password reset script into container
+      command: incus file push /tmp/reset_password.py {{ container_name }}/tmp/reset_password.py
+
     - name: Add Incus proxy device
       command: incus config device add {{ container_name }} proxy-jupyterhub proxy
         connect=tcp:127.0.0.1:{{ jupyterhub_port }}
