@@ -334,27 +334,29 @@
           c.JupyterHub.trust_xheaders = True
           c.JupyterHub.cookie_secret_file = '/srv/jupyterhub/jupyterhub_cookie_secret'
           c.JupyterHub.service_tokens = {'{{ jupyterhub_api_token }}': 'idle-culler'}
+          c.JupyterHub.services = [
+              {
+                  'name': 'idle-culler',
+                  'api_token': '{{ jupyterhub_api_token }}',
+                  'command': ['{{ venv_dir }}/bin/jupyterhub-idle-culler',
+                      '--url=http://127.0.0.1:{{ jupyterhub_port }}',
+                      '--timeout=900'],
+              },
+          ]
 
-          import hashlib, os
-          from dockerspawner import DockerSpawner as _DockerSpawner
+          import os
+          from dockerspawner import DockerSpawner
 
-          class _HostNetworkSpawner(_DockerSpawner):
-              async def get_ip_and_port(self):
-                  return '127.0.0.1', self.port
-
+          class _UserDockerSpawner(DockerSpawner):
               async def start(self):
-                  # Unique port per user to avoid host-networking conflicts
-                  digest = hashlib.sha256(self.user.name.encode()).hexdigest()
-                  offset = int(digest[:8], 16) % 60000
-                  self.port = 10000 + offset
                   home = '/srv/jupyterhub/users/' + self.escaped_name
                   os.makedirs(home, exist_ok=True)
                   os.chown(home, 1000, 100)
                   return await super().start()
 
-          c.JupyterHub.spawner_class = _HostNetworkSpawner
+          c.JupyterHub.spawner_class = _UserDockerSpawner
           c.DockerSpawner.image = '{{ notebook_image }}'
-          c.DockerSpawner.network_name = 'host'
+          c.DockerSpawner.network_name = 'jupyterhub-network'
           c.DockerSpawner.use_internal_ip = True
           c.DockerSpawner.remove = True
           c.DockerSpawner.cmd = ['/usr/local/bin/setup-and-start.sh']
@@ -515,56 +517,6 @@
         - name: Fail with diagnostic info
           fail:
             msg: "JupyterHub service failed to start. Check the output above for details."
-
-    # ── Idle culler (shut down containers idle >15 min, check every 1 min) ──
-
-    - name: Write idle culler token file inside container
-      command: incus exec {{ container_name }} -- sh -c
-        "echo '{{ jupyterhub_api_token }}' > {{ data_dir }}/idle_culler_token"
-
-    - name: Write idle culler systemd service to host temp
-      copy:
-        dest: /tmp/jupyterhub-idle-culler.service
-        content: |
-          [Unit]
-          Description=JupyterHub Idle Culler
-          After=jupyterhub.service
-
-          [Service]
-          Type=oneshot
-          User=root
-          Environment=JUPYTERHUB_API_TOKEN={{ jupyterhub_api_token }}
-          ExecStart={{ venv_dir }}/bin/jupyterhub-idle-culler
-            --url=http://127.0.0.1:{{ jupyterhub_port }}
-            --timeout=900
-
-          [Install]
-          WantedBy=multi-user.target
-
-    - name: Push idle culler service into container
-      command: incus file push /tmp/jupyterhub-idle-culler.service
-        {{ container_name }}/etc/systemd/system/jupyterhub-idle-culler.service
-
-    - name: Write idle culler systemd timer to host temp
-      copy:
-        dest: /tmp/jupyterhub-idle-culler.timer
-        content: |
-          [Unit]
-          Description=Run JupyterHub Idle Culler every minute
-
-          [Timer]
-          OnCalendar=*:0/1
-
-          [Install]
-          WantedBy=timers.target
-
-    - name: Push idle culler timer into container
-      command: incus file push /tmp/jupyterhub-idle-culler.timer
-        {{ container_name }}/etc/systemd/system/jupyterhub-idle-culler.timer
-
-    - name: Enable and start idle culler timer
-      command: incus exec {{ container_name }} -- sh -c
-        "systemctl daemon-reload && systemctl enable --now jupyterhub-idle-culler.timer"
 
     - name: Add Incus proxy device
       command: incus config device add {{ container_name }} proxy-jupyterhub proxy
