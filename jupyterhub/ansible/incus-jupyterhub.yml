@@ -223,7 +223,7 @@
         jupyterhub jupyterlab notebook jupyterhub-nativeauthenticator
         dockerspawner
         numpy pandas matplotlib flask jupyter-server-proxy
-        fastapi uvicorn streamlit copier jupyterhub-idle-culler
+        fastapi uvicorn streamlit copier jupyterhub-idle-culler bcrypt
 
     - name: Create required directories
       command: incus exec {{ container_name }} -- mkdir -p /etc/jupyterhub {{ data_dir }} {{ data_dir }}/users
