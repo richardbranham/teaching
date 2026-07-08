@@ -51,9 +51,7 @@ c.JupyterHub.services = [
     {
         'name': 'idle-culler',
         'api_token': '$IDLE_CULLER_TOKEN',
-        'command': ['$VENV/bin/jupyterhub-idle-culler',
-            '--url=http://127.0.0.1:$JUPYTERHUB_PORT',
-            '--timeout=900'],
+        'command': ['$VENV/bin/jupyterhub-idle-culler', '--timeout=900'],
     },
 ]
 EOF"

@@ -338,9 +338,7 @@
               {
                   'name': 'idle-culler',
                   'api_token': '{{ jupyterhub_api_token }}',
-                  'command': ['{{ venv_dir }}/bin/jupyterhub-idle-culler',
-                      '--url=http://127.0.0.1:{{ jupyterhub_port }}',
-                      '--timeout=900'],
+                  'command': ['{{ venv_dir }}/bin/jupyterhub-idle-culler', '--timeout=900'],
               },
           ]
 
