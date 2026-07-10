@@ -267,6 +267,7 @@
           CIST1220_DIR="$USER_HOME/CIST1220"
 
           if [ -d "$MIDTERM_SRC" ]; then
+              mkdir -p "$CIST1220_DIR"
               cp -r "$MIDTERM_SRC" "${CIST1220_DIR}/midterm_project_master.new" 2>/dev/null || true
               find "${CIST1220_DIR}/midterm_project_master.new" -type d -exec chmod 555 {} + 2>/dev/null || true
               find "${CIST1220_DIR}/midterm_project_master.new" -type f -exec chmod 444 {} + 2>/dev/null || true
